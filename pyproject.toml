@@ -1,0 +1,22 @@
+[project]
+name = "jmcdonations-fastapi"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "aiosqlite>=0.22.1",
+    "alembic>=1.19.1",
+    "asyncpg>=0.31.0",
+    "boto3>=1.43.83",
+    "celery>=5.6.3",
+    "fastapi>=0.141.1",
+    "firebase-admin>=7.5.0",
+    "httpx>=0.28.1",
+    "pydantic>=2.13.5",
+    "pydantic-settings>=2.15.0",
+    "pytest>=9.1.1",
+    "redis>=8.1.0",
+    "sqlalchemy>=2.0.52",
+    "uvicorn>=0.52.4",
+]
