@@ -1,4 +1,5 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field
 from typing import List
 
 class Settings(BaseSettings):
@@ -7,9 +8,9 @@ class Settings(BaseSettings):
     API_V1_STR: str = "/api/v1"
     
     # Security
-    SECRET_KEY: str = "django-insecure-default-key-for-local-dev-only-do-not-use-in-prod"
-    ALLOWED_HOSTS: List[str] = ["*"]
-    CORS_ALLOWED_ORIGINS: List[str] = ["*"]
+    SECRET_KEY: str = Field(default="django-insecure-default-key-for-local-dev-only-do-not-use-in-prod", alias="DJANGO_SECRET_KEY")
+    ALLOWED_HOSTS: str = "*"
+    CORS_ALLOWED_ORIGIN: str = "*"
     
     # Database
     DATABASE_URL: str = "sqlite+aiosqlite:///./db.sqlite3"
@@ -25,7 +26,7 @@ class Settings(BaseSettings):
     
     # PayPal & Flutterwave
     PAYPAL_CLIENT_ID: str = ""
-    PAYPAL_CLIENT_SECRET: str = ""
+    PAYPAL_SECRET: str = ""
     PAYPAL_MODE: str = "sandbox"
     PAYPAL_WEBHOOK_ID: str = ""
     PAYPAL_CALLBACK_URL: str = "https://diatomaceous-preventively-amber.ngrok-free.dev/api/v1/transactions/paypal_callback/"
