@@ -9,6 +9,9 @@ class Settings(BaseSettings):
     
     # Security
     SECRET_KEY: str = Field(default="django-insecure-default-key-for-local-dev-only-do-not-use-in-prod", alias="DJANGO_SECRET_KEY")
+    JWT_ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     ALLOWED_HOSTS: str = "*"
     CORS_ALLOWED_ORIGIN: str = "*"
     
@@ -22,14 +25,14 @@ class Settings(BaseSettings):
     MPESA_API_URL: str = "https://sandbox.safaricom.co.ke"
     MPESA_PASSKEY: str = ""
     MPESA_SHORTCODE: str = ""
-    MPESA_CALLBACK_URL: str = "https://diatomaceous-preventively-amber.ngrok-free.dev/api/v1/mpesa/callback/"
+    MPESA_CALLBACK_URL: str = "https://donations-api.jamiamosque.co.ke/api/v1/mpesa/callback/"
     
     # PayPal & Flutterwave
     PAYPAL_CLIENT_ID: str = ""
     PAYPAL_SECRET: str = ""
     PAYPAL_MODE: str = "sandbox"
     PAYPAL_WEBHOOK_ID: str = ""
-    PAYPAL_CALLBACK_URL: str = "https://diatomaceous-preventively-amber.ngrok-free.dev/api/v1/transactions/paypal_callback/"
+    PAYPAL_CALLBACK_URL: str = "https://donations-api.jamiamosque.co.ke/api/v1/transactions/paypal_callback/"
     FLUTTERWAVE_PUBLIC_KEY: str = ""
     
     # Firebase
