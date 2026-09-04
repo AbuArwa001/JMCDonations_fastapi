@@ -110,6 +110,7 @@ async def notify_khutba(
 # ==================== Device Tokens ====================
 
 @router.post("/register-device", response_model=DeviceTokenResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/register-device/", response_model=DeviceTokenResponse, status_code=status.HTTP_201_CREATED)
 async def register_device_token(token_in: DeviceTokenCreate, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(DeviceToken).filter(DeviceToken.fcm_token == token_in.fcm_token))
     existing = result.scalars().first()

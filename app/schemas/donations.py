@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 from typing import Optional, List
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, computed_field
 
 class DonationBase(BaseModel):
     title: str
@@ -55,6 +55,11 @@ class DonationResponse(DonationBase):
     created_at: datetime
     updated_at: datetime
     created_by_id: uuid.UUID
+
+    @computed_field
+    @property
+    def category(self) -> uuid.UUID:
+        return self.category_id
     
     model_config = ConfigDict(from_attributes=True)
 

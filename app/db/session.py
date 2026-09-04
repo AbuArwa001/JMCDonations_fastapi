@@ -7,6 +7,8 @@ from app.core.config import settings
 engine = create_async_engine(
     settings.DATABASE_URL,
     echo=False,
+    pool_pre_ping=True,
+    pool_recycle=300,
     connect_args={"check_same_thread": False} if "sqlite" in settings.DATABASE_URL else {}
 )
 AsyncSessionLocal = async_sessionmaker(
@@ -21,6 +23,8 @@ AsyncSessionLocal = async_sessionmaker(
 sync_engine = create_engine(
     settings.SYNC_DATABASE_URL,
     echo=False,
+    pool_pre_ping=True,
+    pool_recycle=300,
     connect_args={"check_same_thread": False} if "sqlite" in settings.SYNC_DATABASE_URL else {}
 )
 SessionLocal = sessionmaker(
