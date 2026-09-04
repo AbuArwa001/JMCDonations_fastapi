@@ -12,7 +12,7 @@ class Rating(Base):
     user: Mapped["User"] = relationship("User")
     
     donation_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("donations.id", ondelete="CASCADE"))
-    donation: Mapped["Donation"] = relationship("Donation")
+    donation: Mapped["Donation"] = relationship("Donation", back_populates="ratings")
     
     comment: Mapped[str] = mapped_column(Text)
     rating: Mapped[float] = mapped_column(Float)

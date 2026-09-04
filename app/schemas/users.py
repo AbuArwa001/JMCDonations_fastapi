@@ -67,3 +67,28 @@ class RefreshTokenRequest(BaseModel):
 
 class FCMTokenRequest(BaseModel):
     fcm_token: str
+
+class UserPaymentAccountBase(BaseModel):
+    account_type: str  # M-Pesa, Card, PayPal, Bank
+    provider: Optional[str] = None
+    account_number: str
+    extra_data: Optional[dict] = {}
+    is_default: bool = False
+
+class UserPaymentAccountCreate(UserPaymentAccountBase):
+    pass
+
+class UserPaymentAccountUpdate(BaseModel):
+    account_type: Optional[str] = None
+    provider: Optional[str] = None
+    account_number: Optional[str] = None
+    extra_data: Optional[dict] = None
+    is_default: Optional[bool] = None
+
+class UserPaymentAccountResponse(UserPaymentAccountBase):
+    id: uuid.UUID
+    user_id: uuid.UUID
+    created_at: datetime
+    updated_at: datetime
+    model_config = ConfigDict(from_attributes=True)
+

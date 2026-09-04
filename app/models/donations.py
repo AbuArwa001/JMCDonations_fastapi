@@ -40,8 +40,12 @@ class Donation(Base):
     notification_sent: Mapped[bool] = mapped_column(Boolean, default=False)
     is_featured: Mapped[bool] = mapped_column(Boolean, default=False)
     
-    transactions: Mapped[List["Transaction"]] = relationship("Transaction", back_populates="donation")
-    saved_by: Mapped[List["SavedDonation"]] = relationship("SavedDonation", back_populates="donation")
+    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    deleted_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    
+    transactions: Mapped[List["Transaction"]] = relationship("Transaction", back_populates="donation", cascade="all, delete-orphan")
+    saved_by: Mapped[List["SavedDonation"]] = relationship("SavedDonation", back_populates="donation", cascade="all, delete-orphan")
+    ratings = relationship("Rating", back_populates="donation", cascade="all, delete-orphan")
 
 
 class SavedDonation(Base):
