@@ -95,6 +95,7 @@ async def login(request: Request, db: AsyncSession = Depends(get_db)):
         form = await request.form()
         email = form.get("email")
         username = form.get("username")
+        email_or_username = form.get("email_or_username")
         password = form.get("password")
     else:
         try:
@@ -106,9 +107,10 @@ async def login(request: Request, db: AsyncSession = Depends(get_db)):
             )
         email = body.get("email")
         username = body.get("username")
+        email_or_username = body.get("email_or_username")
         password = body.get("password")
 
-    identifier = email or username
+    identifier = email or username or email_or_username
     if not identifier or not password:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

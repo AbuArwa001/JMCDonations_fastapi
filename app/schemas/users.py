@@ -43,8 +43,9 @@ class TokenResponse(BaseModel):
     user: UserResponse
 
 class LoginRequest(BaseModel):
-    email: Optional[EmailStr] = None
+    email: Optional[str] = None
     username: Optional[str] = None
+    email_or_username: Optional[str] = None
     password: str
 
 class FirebaseLoginRequest(BaseModel):
