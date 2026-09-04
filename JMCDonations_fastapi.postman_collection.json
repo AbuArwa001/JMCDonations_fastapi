@@ -2,7 +2,7 @@
 	"info": {
 		"_postman_id": "c622a578-1cf4-4e2a-888e-64c8d8b67eb6",
 		"name": "JMCDonations FastAPI",
-		"description": "API collection for the newly ported FastAPI application.",
+		"description": "API collection for JMCDonations FastAPI including OAuth2, Firebase authentication, and user profile endpoints.",
 		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
 	},
 	"item": [
@@ -38,7 +38,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n    \"email\": \"test@example.com\",\n    \"username\": \"testuser\",\n    \"full_name\": \"Test User\",\n    \"password\": \"strongpassword123\"\n}"
+							"raw": "{\n    \"email\": \"testuser@example.com\",\n    \"username\": \"testuser\",\n    \"full_name\": \"Test User\",\n    \"password\": \"strongpassword123\",\n    \"phone_number\": \"+254700000000\"\n}"
 						},
 						"url": {
 							"raw": "{{base_url}}/api/v1/auth/register",
@@ -56,7 +56,26 @@
 					"response": []
 				},
 				{
-					"name": "Login",
+					"name": "Login (JSON)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    var data = pm.response.json();",
+									"    if (data.access_token) {",
+									"        pm.collectionVariables.set(\"access_token\", data.access_token);",
+									"    }",
+									"    if (data.refresh_token) {",
+									"        pm.collectionVariables.set(\"refresh_token\", data.refresh_token);",
+									"    }",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
 					"request": {
 						"method": "POST",
 						"header": [
@@ -67,7 +86,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n    \"email\": \"test@example.com\",\n    \"username\": \"testuser\",\n    \"full_name\": \"Test User\",\n    \"password\": \"strongpassword123\"\n}"
+							"raw": "{\n    \"email\": \"testuser@example.com\",\n    \"password\": \"strongpassword123\"\n}"
 						},
 						"url": {
 							"raw": "{{base_url}}/api/v1/auth/login",
@@ -79,6 +98,342 @@
 								"v1",
 								"auth",
 								"login"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "OAuth2 Token Login (Form)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    var data = pm.response.json();",
+									"    if (data.access_token) {",
+									"        pm.collectionVariables.set(\"access_token\", data.access_token);",
+									"    }",
+									"    if (data.refresh_token) {",
+									"        pm.collectionVariables.set(\"refresh_token\", data.refresh_token);",
+									"    }",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/x-www-form-urlencoded"
+							}
+						],
+						"body": {
+							"mode": "urlencoded",
+							"urlencoded": [
+								{
+									"key": "username",
+									"value": "testuser@example.com",
+									"type": "text"
+								},
+								{
+									"key": "password",
+									"value": "strongpassword123",
+									"type": "text"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/auth/token",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"auth",
+								"token"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Firebase Login",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    var data = pm.response.json();",
+									"    if (data.access_token) {",
+									"        pm.collectionVariables.set(\"access_token\", data.access_token);",
+									"    }",
+									"    if (data.refresh_token) {",
+									"        pm.collectionVariables.set(\"refresh_token\", data.refresh_token);",
+									"    }",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"idToken\": \"YOUR_FIREBASE_ID_TOKEN_HERE\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/auth/firebase-login",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"auth",
+								"firebase-login"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Refresh Token",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    var data = pm.response.json();",
+									"    if (data.access_token) {",
+									"        pm.collectionVariables.set(\"access_token\", data.access_token);",
+									"    }",
+									"    if (data.refresh_token) {",
+									"        pm.collectionVariables.set(\"refresh_token\", data.refresh_token);",
+									"    }",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"refresh_token\": \"{{refresh_token}}\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/auth/refresh",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"auth",
+								"refresh"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Current User Profile (Auth /me)",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/auth/me",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"auth",
+								"me"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Update FCM Token",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"fcm_token\": \"your-device-fcm-token-string\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/auth/fcm-token",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"auth",
+								"fcm-token"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Users",
+			"item": [
+				{
+					"name": "Get My Profile (/users/me)",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/users/me",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"users",
+								"me"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Update My Profile",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"full_name\": \"Updated Name\",\n    \"bio\": \"Community supporter and donor\",\n    \"phone_number\": \"+254711223344\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/users/me",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"users",
+								"me"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "List Users (Admin)",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/users/?skip=0&limit=100",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"users",
+								""
+							],
+							"query": [
+								{
+									"key": "skip",
+									"value": "0"
+								},
+								{
+									"key": "limit",
+									"value": "100"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get User by UUID",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/users/{{user_id}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"users",
+								"{{user_id}}"
 							]
 						}
 					},
@@ -161,6 +516,21 @@
 		{
 			"key": "base_url",
 			"value": "http://localhost:8000",
+			"type": "string"
+		},
+		{
+			"key": "access_token",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "refresh_token",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "user_id",
+			"value": "",
 			"type": "string"
 		}
 	]
