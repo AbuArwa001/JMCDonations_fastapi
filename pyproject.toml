@@ -12,7 +12,7 @@ dependencies = [
     "boto3>=1.43.83",
     "celery>=5.6.3",
     "email-validator>=2.0.0",
-    "fastapi>=0.141.1",
+    "fastapi[standard]>=0.141.1",
     "firebase-admin>=7.5.0",
     "httpx>=0.28.1",
     "pydantic>=2.13.5",
@@ -30,4 +30,8 @@ dependencies = [
 pythonpath = ["."]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
+
+[tool.fastapi]
+entrypoint = "app.main:app"
+
 
