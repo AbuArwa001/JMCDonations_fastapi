@@ -6,7 +6,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_
+from sqlalchemy import select, func, and_, case
 
 from app.db.session import get_db
 from app.models.transactions import Transaction
@@ -135,17 +135,19 @@ async def get_drive_progress(
     if not donation:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Donation drive not found")
 
-    coll_res = await db.execute(
-        select(func.coalesce(func.sum(Transaction.amount), 0.0))
-        .filter(Transaction.donation_id == donation.id, Transaction.payment_status == "Completed")
+    tx_stats_res = await db.execute(
+        select(
+            func.coalesce(func.sum(Transaction.amount), 0.0).label("collected"),
+            func.count(func.distinct(Transaction.user_id)).label("reg_donors"),
+            func.count(case((Transaction.user_id.is_(None), 1))).label("anon_donors"),
+        ).filter(
+            Transaction.donation_id == donation.id,
+            Transaction.payment_status == "Completed",
+        )
     )
-    collected = float(coll_res.scalar() or 0.0)
-
-    donors_res = await db.execute(
-        select(func.count(func.distinct(Transaction.user_id)))
-        .filter(Transaction.donation_id == donation.id, Transaction.payment_status == "Completed")
-    )
-    donors = int(donors_res.scalar() or 0)
+    tx_stats = tx_stats_res.one()
+    collected = float(tx_stats.collected or 0.0)
+    donors = int(tx_stats.reg_donors or 0) + int(tx_stats.anon_donors or 0)
 
     return DriveProgressResponse(
         donation=donation.title,

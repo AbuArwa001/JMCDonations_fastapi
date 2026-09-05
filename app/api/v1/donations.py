@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, or_, and_
+from sqlalchemy import select, func, or_, and_, case
 from sqlalchemy.orm import selectinload
 
 from app.db.session import get_db
@@ -32,28 +32,29 @@ def slugify(title: str) -> str:
     return re.sub(r'[\s_-]+', '-', s)
 
 async def build_donation_response(db: AsyncSession, donation: Donation) -> DonationResponse:
-    # 1. Total collected from completed transactions
-    coll_res = await db.execute(
-        select(func.coalesce(func.sum(Transaction.amount), 0.0))
-        .filter(Transaction.donation_id == donation.id, Transaction.payment_status == "Completed")
+    # 1. Total collected & distinct supporter count (distinct registered donors + anonymous/guest donors)
+    tx_stats_res = await db.execute(
+        select(
+            func.coalesce(func.sum(Transaction.amount), 0.0).label("collected"),
+            func.count(func.distinct(Transaction.user_id)).label("reg_donors"),
+            func.count(case((Transaction.user_id.is_(None), 1))).label("anon_donors"),
+        ).filter(
+            Transaction.donation_id == donation.id,
+            Transaction.payment_status == "Completed",
+        )
     )
-    collected = float(coll_res.scalar() or 0.0)
+    tx_stats = tx_stats_res.one()
+    collected = float(tx_stats.collected or 0.0)
+    donors = int(tx_stats.reg_donors or 0) + int(tx_stats.anon_donors or 0)
 
-    # 2. Distinct donor count
-    donor_res = await db.execute(
-        select(func.count(func.distinct(Transaction.user_id)))
-        .filter(Transaction.donation_id == donation.id, Transaction.payment_status == "Completed", Transaction.user_id.isnot(None))
-    )
-    donors = int(donor_res.scalar() or 0)
-
-    # 3. Average rating
+    # 2. Average rating
     rating_res = await db.execute(
         select(func.coalesce(func.avg(Rating.rating), 0.0))
         .filter(Rating.donation_id == donation.id)
     )
     avg_rating = round(float(rating_res.scalar() or 0.0), 2)
 
-    # 4. Remaining days & expired check
+    # 3. Remaining days & expired check
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     remaining_days = (donation.end_date.date() - now.date()).days if donation.end_date else 0
     is_expired = remaining_days < 0
