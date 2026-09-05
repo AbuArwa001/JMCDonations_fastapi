@@ -113,3 +113,18 @@ async def get_current_admin_user(
             detail="The user doesn't have enough privileges"
         )
     return current_user
+
+async def get_optional_current_user(
+    token: Optional[str] = Depends(oauth2_scheme),
+    db: AsyncSession = Depends(get_db)
+) -> Optional[User]:
+    """
+    Optionally authenticate a user if a token is present, returning None if unauthenticated.
+    """
+    if not token:
+        return None
+    try:
+        return await get_current_user(token=token, db=db)
+    except Exception:
+        return None
+
