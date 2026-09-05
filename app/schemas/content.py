@@ -226,7 +226,9 @@ class DailyPrayerTimesResponse(BaseModel):
     city: str
     date: date
     fajr: str
+    sunrise: str = "06:25"
     dhuhr: str
     asr: str
     maghrib: str
     isha: str
+    hijri_date: Optional[str] = None

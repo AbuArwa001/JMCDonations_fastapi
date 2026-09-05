@@ -154,7 +154,31 @@ async def update_settings(
 
 # ==================== Today & Calc Times ====================
 
+def compute_hijri_date(target_date: date) -> str:
+    hijri_months = [
+        "Muharram", "Safar", "Rabi' al-Awwal", "Rabi' al-Thani",
+        "Jumada al-Awwal", "Jumada al-Thani", "Rajab", "Sha'ban",
+        "Ramadan", "Shawwal", "Dhu al-Qi'dah", "Dhu al-Hijjah"
+    ]
+    a = (14 - target_date.month) // 12
+    y = target_date.year + 4800 - a
+    m = target_date.month + 12 * a - 3
+    jd = target_date.day + (153 * m + 2) // 5 + 365 * y + y // 4 - y // 100 + y // 400 - 32045
+
+    l = jd - 1948440 + 10632
+    n = (l - 1) // 10631
+    l2 = l - 10631 * n + 354
+    j = ((10985 - l2) // 5316) * ((50 * l2) // 17719) + (l2 // 5670) * ((43 * l2) // 15238)
+    l3 = l2 - ((30 - j) // 15) * ((17719 * j) // 50) - (j // 16) * ((15238 * j) // 43) + 29
+    m_h = (24 * l3) // 709
+    d_h = l3 - (709 * m_h) // 24
+    y_h = 30 * n + j - 30
+
+    month_name = hijri_months[m_h - 1] if 1 <= m_h <= 12 else "Safar"
+    return f"{d_h} {month_name} {y_h} AH"
+
 @router.get("/today", response_model=DailyPrayerTimesResponse)
+@router.get("/today/", response_model=DailyPrayerTimesResponse)
 @router.get("/", response_model=DailyPrayerTimesResponse)
 async def get_today_prayer_times(
     city_name: str = "Nairobi",
@@ -167,10 +191,12 @@ async def get_today_prayer_times(
         "city": city_name,
         "date": query_date,
         "fajr": "05:15",
+        "sunrise": "06:25",
         "dhuhr": "12:35",
         "asr": "15:55",
         "maghrib": "18:40",
-        "isha": "19:50"
+        "isha": "19:50",
+        "hijri_date": compute_hijri_date(query_date),
     }
 
     # Check for city overrides
