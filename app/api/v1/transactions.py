@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import List, Optional, Union
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -38,16 +38,27 @@ async def list_transactions(
     user_id: Optional[uuid.UUID] = None,
     payment_status: Optional[str] = None,
     payment_method: Optional[str] = None,
+    current_user: Optional[User] = Depends(get_optional_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     """
-    List transactions with optional filtering.
+    List transactions with optional filtering. Regular users only see their own transactions.
     """
     query = select(Transaction)
+    
+    if current_user and not current_user.is_admin:
+        # Non-admin users only view their own transactions or transactions made with their phone
+        phone_cond = []
+        if current_user.phone_number:
+            clean_p = current_user.phone_number.replace("+", "").replace(" ", "").replace("-", "")
+            if len(clean_p) >= 9:
+                phone_cond.append(Transaction.account_number.contains(clean_p[-9:]))
+        query = query.filter(or_(Transaction.user_id == current_user.id, *phone_cond))
+    elif user_id:
+        query = query.filter(Transaction.user_id == user_id)
+
     if donation_id:
         query = query.filter(Transaction.donation_id == donation_id)
-    if user_id:
-        query = query.filter(Transaction.user_id == user_id)
     if payment_status:
         query = query.filter(Transaction.payment_status == payment_status)
     if payment_method:
@@ -92,6 +103,7 @@ class STKPushInput(BaseModel):
     account_name: Optional[str] = "Donation"
     donation: Optional[str] = None
     donation_id: Optional[str] = None
+    user_id: Optional[Union[uuid.UUID, str]] = None
 
 
 @router.post("/initiate_stk_push")
@@ -145,14 +157,30 @@ async def initiate_stk_push(
             detail=f"Invalid Kenyan phone number: {payload.phone_number}. Must be in 2547XXXXXXXX format."
         )
 
-    # 4. Generate local reference & create Pending Transaction in DB
+    # 4. Resolve user_id: current_user -> payload.user_id -> phone lookup
+    target_user_id = current_user.id if current_user else None
+    if not target_user_id and payload.user_id:
+        try:
+            target_user_id = uuid.UUID(str(payload.user_id).strip())
+        except ValueError:
+            target_user_id = None
+
+    if not target_user_id:
+        u_phone_res = await db.execute(
+            select(User).filter(User.phone_number.contains(clean_phone[-9:]))
+        )
+        matched_user = u_phone_res.scalars().first()
+        if matched_user:
+            target_user_id = matched_user.id
+
+    # 5. Generate local reference & create Pending Transaction in DB
     ref = f"WS_{uuid.uuid4().hex[:12].upper()}"
-    account_name = payload.account_name or donation.title
+    donor_account_name = payload.account_name or (current_user.full_name if current_user else donation.title)
     db_tx = Transaction(
         donation_id=target_donation_id,
-        user_id=current_user.id if current_user else None,
-        account_name=account_name[:100],
-        account_number=donation.account_number or donation.paybill_number,
+        user_id=target_user_id,
+        account_name=donor_account_name[:100],
+        account_number=clean_phone,
         amount=payload.amount,
         payment_method="M-Pesa",
         payment_status="Pending",
@@ -499,9 +527,21 @@ async def mpesa_callback(request: Request, db: AsyncSession = Depends(get_db)):
             if str(result_code) == "0":
                 items = stk_callback.get("CallbackMetadata", {}).get("Item", [])
                 receipt = next((i.get("Value") for i in items if i.get("Name") == "MpesaReceiptNumber"), None)
+                phone = next((i.get("Value") for i in items if i.get("Name") == "PhoneNumber"), None)
                 tx.payment_status = "Completed"
                 if receipt:
                     tx.mpesa_receipt = str(receipt)
+                if phone:
+                    clean_p = str(phone).strip()
+                    tx.account_number = clean_p
+                    if not tx.user_id:
+                        u_res = await db.execute(
+                            select(User).filter(User.phone_number.contains(clean_p[-9:]))
+                        )
+                        matched = u_res.scalars().first()
+                        if matched:
+                            tx.user_id = matched.id
+                            logger.info(f"Transaction {tx.id} auto-linked to user {matched.email} ({matched.id})")
                 tx.completed_at = datetime.now(timezone.utc).replace(tzinfo=None)
                 logger.info(f"Transaction {tx.id} marked as Completed. Receipt: {receipt}")
             else:

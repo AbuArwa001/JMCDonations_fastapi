@@ -27,6 +27,7 @@ from app.core.security import (
 )
 from app.services.firebase import firebase_service
 from app.api.dependencies.auth import get_current_active_user
+from app.services.user_service import get_user_response
 
 logger = logging.getLogger(__name__)
 
@@ -141,12 +142,13 @@ async def login(request: Request, db: AsyncSession = Depends(get_db)):
     
     access_token = create_access_token(user.id)
     refresh_token = create_refresh_token(user.id)
+    user_response = await get_user_response(db, user)
     
     return TokenResponse(
         access_token=access_token,
         token_type="bearer",
         refresh_token=refresh_token,
-        user=user
+        user=user_response
     )
 
 @router.post("/token", response_model=Token)
@@ -208,12 +210,13 @@ async def firebase_login(
     # Generate system JWTs
     access_token = create_access_token(user.id)
     refresh_token = create_refresh_token(user.id)
+    user_response = await get_user_response(db, user)
     
     return TokenResponse(
         access_token=access_token,
         token_type="bearer",
         refresh_token=refresh_token,
-        user=user
+        user=user_response
     )
 
 @router.post("/refresh", response_model=Token)
@@ -268,13 +271,14 @@ async def refresh_token(
 
 @router.get("/me", response_model=UserResponse)
 async def get_my_profile(
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db)
 ):
     """
-    Get authenticated user's profile.
+    Get authenticated user's profile with stats.
     Accepts internal JWT or direct Firebase ID token.
     """
-    return current_user
+    return await get_user_response(db, current_user)
 
 @router.post("/fcm-token")
 async def update_fcm_token(

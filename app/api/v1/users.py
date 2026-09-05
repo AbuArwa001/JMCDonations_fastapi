@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from typing import List
 from datetime import datetime, timezone
+from pathlib import Path
 import uuid
 
 from app.db.session import get_db
@@ -12,6 +13,7 @@ from app.schemas.users import (
     UserPaymentAccountCreate, UserPaymentAccountUpdate, UserPaymentAccountResponse
 )
 from app.api.dependencies.auth import get_current_active_user, get_current_admin_user
+from app.services.user_service import get_user_response
 
 router = APIRouter()
 
@@ -19,30 +21,94 @@ router = APIRouter()
 
 @router.get("/me", response_model=UserResponse)
 async def read_user_me(
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db)
 ):
     """
-    Get current logged in user details.
+    Get current logged in user details with dynamically calculated donation metrics.
     """
-    return current_user
+    return await get_user_response(db, current_user)
 
 @router.patch("/me", response_model=UserResponse)
 @router.put("/me", response_model=UserResponse)
 async def update_user_me(
-    user_update: UserUpdate,
+    request: Request,
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db)
 ):
     """
     Update profile details of current user.
+    Accepts both JSON and Multipart Form Data (with optional profile_image file).
     """
-    update_data = user_update.model_dump(exclude_unset=True)
-    for field, value in update_data.items():
-        setattr(current_user, field, value)
+    content_type = request.headers.get("content-type", "")
+    if "multipart/form-data" in content_type:
+        form = await request.form()
+        profile_file = form.get("profile_image")
+        if profile_file and hasattr(profile_file, "read"):
+            upload_dir = Path("static/avatars")
+            upload_dir.mkdir(parents=True, exist_ok=True)
+            ext = "jpg"
+            if hasattr(profile_file, "filename") and profile_file.filename and "." in profile_file.filename:
+                ext = profile_file.filename.split(".")[-1]
+            filename = f"{current_user.id}_{int(datetime.now(timezone.utc).timestamp())}.{ext}"
+            dest_path = upload_dir / filename
+            content = await profile_file.read()
+            with open(dest_path, "wb") as f:
+                f.write(content)
+            current_user.profile_image_url = f"/static/avatars/{filename}"
+
+        allowed_fields = [
+            "full_name", "phone_number", "bio", "address",
+            "default_donation_account", "profile_image_url", "fcm_token"
+        ]
+        for key in allowed_fields:
+            if key in form and form[key]:
+                setattr(current_user, key, form[key])
+    else:
+        try:
+            body = await request.json()
+            user_update = UserUpdate.model_validate(body)
+            update_data = user_update.model_dump(exclude_unset=True)
+            for field, value in update_data.items():
+                setattr(current_user, field, value)
+        except Exception:
+            pass
         
     await db.commit()
     await db.refresh(current_user)
-    return current_user
+    return await get_user_response(db, current_user)
+
+@router.post("/avatar", response_model=UserResponse)
+@router.post("/me/avatar", response_model=UserResponse)
+async def upload_user_avatar(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Upload and set avatar for the currently authenticated user.
+    """
+    if not file.content_type or not file.content_type.startswith("image/"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Uploaded file must be an image (JPEG, PNG, WebP)"
+        )
+
+    upload_dir = Path("static/avatars")
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    ext = file.filename.split(".")[-1] if file.filename and "." in file.filename else "jpg"
+    filename = f"{current_user.id}_{int(datetime.now(timezone.utc).timestamp())}.{ext}"
+    dest_path = upload_dir / filename
+
+    content = await file.read()
+    with open(dest_path, "wb") as f:
+        f.write(content)
+
+    current_user.profile_image_url = f"/static/avatars/{filename}"
+    await db.commit()
+    await db.refresh(current_user)
+    return await get_user_response(db, current_user)
+
 
 # ==================== User Payment Accounts ====================
 
@@ -178,7 +244,7 @@ async def read_user(
     user = result.scalars().first()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-    return user
+    return await get_user_response(db, user)
 
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_user(

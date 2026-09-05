@@ -20,7 +20,16 @@ if settings.CORS_ALLOWED_ORIGIN:
         allow_headers=["*"],
     )
 
+from pathlib import Path
+from fastapi.staticfiles import StaticFiles
+
 app.include_router(api_router, prefix=settings.API_V1_STR)
+
+# Mount static files directory (avatars, uploads)
+static_dir = Path("static")
+static_dir.mkdir(parents=True, exist_ok=True)
+(static_dir / "avatars").mkdir(parents=True, exist_ok=True)
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 @app.get("/")
 def read_root():
