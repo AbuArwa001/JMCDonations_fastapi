@@ -22,6 +22,9 @@ from app.api.dependencies.auth import (
     get_optional_current_user
 )
 from app.services.mpesa import mpesa_service
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -264,6 +267,53 @@ async def check_status(reference: str, db: AsyncSession = Depends(get_db)):
     if not tx:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transaction not found")
 
+    # If transaction is still Pending and has an M-Pesa CheckoutRequestID, query Daraja STK query directly
+    if tx.payment_status == "Pending" and tx.transaction_reference and tx.transaction_reference.startswith("ws_CO_"):
+        try:
+            consumer_key = None
+            consumer_secret = None
+            passkey = None
+            shortcode = settings.MPESA_SHORTCODE
+
+            if tx.donation_id:
+                don_res = await db.execute(select(Donation).filter(Donation.id == tx.donation_id))
+                don = don_res.scalars().first()
+                if don:
+                    party_b = don.paybill_number
+                    bank_acc = None
+                    if party_b:
+                        b_res = await db.execute(
+                            select(BankAccount).filter(BankAccount.paybill_number == party_b, BankAccount.is_active == True)
+                        )
+                        bank_acc = b_res.scalars().first()
+                    consumer_key = don.consumer_key or (bank_acc.consumer_key if bank_acc else None)
+                    consumer_secret = don.consumer_secret or (bank_acc.consumer_secret if bank_acc else None)
+                    passkey = don.passkey or (bank_acc.passkey if bank_acc else None)
+                    if consumer_key and consumer_secret:
+                        shortcode = party_b or (bank_acc.paybill_number if bank_acc else settings.MPESA_SHORTCODE)
+
+            stk_res = await mpesa_service.query_stk_status(
+                checkout_request_id=tx.transaction_reference,
+                shortcode=shortcode,
+                passkey=passkey,
+                consumer_key=consumer_key,
+                consumer_secret=consumer_secret,
+            )
+            res_code = str(stk_res.get("ResultCode", ""))
+            if res_code == "0":
+                tx.payment_status = "Completed"
+                tx.completed_at = datetime.now(timezone.utc).replace(tzinfo=None)
+                await db.commit()
+                await db.refresh(tx)
+                logger.info(f"Transaction {tx.id} resolved to Completed via Daraja STK Query")
+            elif res_code in ("1032", "1037", "2001", "1"):
+                tx.payment_status = "Failed"
+                await db.commit()
+                await db.refresh(tx)
+                logger.info(f"Transaction {tx.id} resolved to Failed via Daraja STK Query (code {res_code})")
+        except Exception as e:
+            logger.warning(f"Error querying Daraja STK Query for {tx.transaction_reference}: {e}")
+
     return {
         "payment_status": tx.payment_status,
         "mpesa_receipt": tx.mpesa_receipt or "",
@@ -417,6 +467,7 @@ async def create_transfer(
 # ==================== M-Pesa Callback ====================
 
 @router.post("/mpesa/callback")
+@router.post("/mpesa/callback/")
 async def mpesa_callback(request: Request, db: AsyncSession = Depends(get_db)):
     """
     Handle Daraja M-Pesa IPN / STK callback.
@@ -428,21 +479,36 @@ async def mpesa_callback(request: Request, db: AsyncSession = Depends(get_db)):
 
     stk_callback = body.get("Body", {}).get("stkCallback", {})
     result_code = stk_callback.get("ResultCode")
+    result_desc = stk_callback.get("ResultDesc", "")
     checkout_id = stk_callback.get("CheckoutRequestID")
+    merchant_id = stk_callback.get("MerchantRequestID")
 
-    # If completed successfully, update transaction
-    if result_code == 0 and checkout_id:
-        items = stk_callback.get("CallbackMetadata", {}).get("Item", [])
-        receipt = next((i.get("Value") for i in items if i.get("Name") == "MpesaReceiptNumber"), None)
-        
+    logger.info(f"M-Pesa STK Callback received: CheckoutRequestID={checkout_id}, MerchantRequestID={merchant_id}, ResultCode={result_code}, Desc={result_desc}")
+
+    if checkout_id:
         tx_res = await db.execute(
-            select(Transaction).filter(Transaction.transaction_reference == checkout_id)
+            select(Transaction).filter(
+                or_(
+                    Transaction.transaction_reference == checkout_id,
+                    Transaction.transaction_reference == merchant_id
+                )
+            )
         )
         tx = tx_res.scalars().first()
         if tx:
-            tx.payment_status = "Completed"
-            tx.mpesa_receipt = receipt
-            tx.completed_at = datetime.now(timezone.utc).replace(tzinfo=None)
+            if str(result_code) == "0":
+                items = stk_callback.get("CallbackMetadata", {}).get("Item", [])
+                receipt = next((i.get("Value") for i in items if i.get("Name") == "MpesaReceiptNumber"), None)
+                tx.payment_status = "Completed"
+                if receipt:
+                    tx.mpesa_receipt = str(receipt)
+                tx.completed_at = datetime.now(timezone.utc).replace(tzinfo=None)
+                logger.info(f"Transaction {tx.id} marked as Completed. Receipt: {receipt}")
+            else:
+                tx.payment_status = "Failed"
+                logger.info(f"Transaction {tx.id} marked as Failed. Reason: {result_desc}")
             await db.commit()
+        else:
+            logger.warning(f"Transaction not found for CheckoutRequestID={checkout_id}")
 
     return {"ResultCode": 0, "ResultDesc": "Success"}

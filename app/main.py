@@ -29,3 +29,9 @@ def read_root():
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
+
+# Root fallback for M-Pesa callbacks without /api/v1 prefix
+from app.api.v1.transactions import mpesa_callback
+app.add_api_route("/mpesa/callback", mpesa_callback, methods=["POST"], tags=["mpesa"])
+app.add_api_route("/mpesa/callback/", mpesa_callback, methods=["POST"], tags=["mpesa"])
+
