@@ -2,6 +2,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import List, Optional, Union
 from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_
@@ -22,6 +23,7 @@ from app.api.dependencies.auth import (
     get_optional_current_user
 )
 from app.services.mpesa import mpesa_service
+from app.services.paypal import paypal_service
 import logging
 
 logger = logging.getLogger(__name__)
@@ -107,9 +109,9 @@ class STKPushInput(BaseModel):
 
 
 @router.post("/initiate_stk_push")
-@router.post("/initiate_stk_push/")
-@router.post("/initiate-stk-push")
-@router.post("/initiate-stk-push/")
+@router.post("/initiate_stk_push/", include_in_schema=False)
+@router.post("/initiate-stk-push", include_in_schema=False)
+@router.post("/initiate-stk-push/", include_in_schema=False)
 async def initiate_stk_push(
     payload: STKPushInput,
     current_user: Optional[User] = Depends(get_optional_current_user),
@@ -262,9 +264,9 @@ async def initiate_stk_push(
 
 
 @router.get("/check_status")
-@router.get("/check_status/")
-@router.get("/check-status")
-@router.get("/check-status/")
+@router.get("/check_status/", include_in_schema=False)
+@router.get("/check-status", include_in_schema=False)
+@router.get("/check-status/", include_in_schema=False)
 async def check_status(reference: str, db: AsyncSession = Depends(get_db)):
     """
     Check payment status by transaction reference or CheckoutRequestID.
@@ -347,6 +349,300 @@ async def check_status(reference: str, db: AsyncSession = Depends(get_db)):
         "mpesa_receipt": tx.mpesa_receipt or "",
         "transaction_id": str(tx.id),
         "amount": float(tx.amount),
+    }
+
+
+# ==================== PayPal & Card (Flutterwave) Payments ====================
+
+class PayPalInitInput(BaseModel):
+    amount: float
+    donation: Optional[str] = None
+    donation_id: Optional[str] = None
+    account_name: Optional[str] = "Donation"
+    currency: Optional[str] = "USD"
+
+
+@router.post("/initiate_paypal_payment")
+@router.post("/initiate_paypal_payment/", include_in_schema=False)
+@router.post("/initiate-paypal-payment", include_in_schema=False)
+@router.post("/initiate-paypal-payment/", include_in_schema=False)
+async def initiate_paypal_payment(
+    payload: PayPalInitInput,
+    current_user: Optional[User] = Depends(get_optional_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Initiate a PayPal donation by creating an order and returning the approval URL.
+    """
+    raw_id = payload.donation or payload.donation_id
+    if not raw_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Donation ID is required",
+        )
+    try:
+        target_donation_id = uuid.UUID(str(raw_id).strip())
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid donation UUID: {raw_id}",
+        )
+
+    d_res = await db.execute(
+        select(Donation).filter(Donation.id == target_donation_id, Donation.is_deleted == False)
+    )
+    donation = d_res.scalars().first()
+    if not donation:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Donation drive not found",
+        )
+
+    donor_account_name = payload.account_name or (current_user.full_name if current_user else donation.title)
+    db_tx = Transaction(
+        donation_id=target_donation_id,
+        user_id=current_user.id if current_user else None,
+        account_name=donor_account_name[:100],
+        account_number="PayPal",
+        amount=payload.amount,
+        payment_method="Paypal",
+        payment_status="Pending",
+        transaction_reference=f"PP_{uuid.uuid4().hex[:12].upper()}",
+        donated_at=datetime.now(timezone.utc).replace(tzinfo=None),
+    )
+    db.add(db_tx)
+    await db.commit()
+    await db.refresh(db_tx)
+
+    base_callback = settings.PAYPAL_CALLBACK_URL.rstrip("/")
+    return_url = f"{base_callback}/?tx_id={db_tx.id}"
+    cancel_url = f"{base_callback}/?cancel=true&tx_id={db_tx.id}"
+
+    order = await paypal_service.create_order(
+        amount=payload.amount,
+        currency=payload.currency or "USD",
+        return_url=return_url,
+        cancel_url=cancel_url,
+    )
+
+    if order and "id" in order:
+        db_tx.transaction_reference = order["id"]
+        await db.commit()
+        await db.refresh(db_tx)
+
+        approval_link = next(
+            (link["href"] for link in order.get("links", []) if link.get("rel") == "approve"),
+            None,
+        )
+        if approval_link:
+            return {
+                "approval_url": approval_link,
+                "transaction_id": str(db_tx.id),
+            }
+
+    db_tx.payment_status = "Failed"
+    await db.commit()
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="Failed to create PayPal order",
+    )
+
+
+@router.get("/paypal_callback")
+@router.get("/paypal_callback/", include_in_schema=False)
+@router.get("/paypal-callback", include_in_schema=False)
+@router.get("/paypal-callback/", include_in_schema=False)
+async def paypal_callback(
+    tx_id: Optional[str] = None,
+    token: Optional[str] = None,
+    cancel: Optional[str] = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Handle return redirect from PayPal approval or cancellation.
+    """
+    tx = None
+    if tx_id:
+        try:
+            tx_uuid = uuid.UUID(tx_id.strip())
+            t_res = await db.execute(select(Transaction).filter(Transaction.id == tx_uuid))
+            tx = t_res.scalars().first()
+        except ValueError:
+            pass
+
+    if not tx and token:
+        t_res = await db.execute(select(Transaction).filter(Transaction.transaction_reference == token))
+        tx = t_res.scalars().first()
+
+    if not tx:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transaction not found")
+
+    if cancel == "true":
+        tx.payment_status = "Failed"
+        await db.commit()
+        return RedirectResponse(url="jamiagive://payment/cancel", status_code=status.HTTP_302_FOUND)
+
+    capture_token = token or tx.transaction_reference
+    capture = await paypal_service.capture_order(capture_token)
+
+    if capture and capture.get("status") == "COMPLETED":
+        tx.payment_status = "Completed"
+        tx.completed_at = datetime.now(timezone.utc).replace(tzinfo=None)
+        try:
+            cap_id = capture["purchase_units"][0]["payments"]["captures"][0]["id"]
+            tx.mpesa_receipt = cap_id
+        except (KeyError, IndexError):
+            tx.mpesa_receipt = capture_token
+        await db.commit()
+        return RedirectResponse(
+            url=f"jamiagive://payment/success?tx_id={tx.id}",
+            status_code=status.HTTP_302_FOUND,
+        )
+
+    tx.payment_status = "Failed"
+    await db.commit()
+    return RedirectResponse(url="jamiagive://payment/failure", status_code=status.HTTP_302_FOUND)
+
+
+class CardPaymentInput(BaseModel):
+    amount: float
+    donation_id: Optional[str] = None
+    donation: Optional[str] = None
+    card_number: Optional[str] = None
+    expiry_date: Optional[str] = None
+    cvv: Optional[str] = None
+
+
+@router.post("/initiate_card_payment", status_code=status.HTTP_201_CREATED)
+@router.post("/initiate_card_payment/", status_code=status.HTTP_201_CREATED, include_in_schema=False)
+@router.post("/initiate-card-payment", status_code=status.HTTP_201_CREATED, include_in_schema=False)
+@router.post("/initiate-card-payment/", status_code=status.HTTP_201_CREATED, include_in_schema=False)
+async def initiate_card_payment(
+    payload: CardPaymentInput,
+    current_user: Optional[User] = Depends(get_optional_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Initiate a card payment by creating a pending transaction and returning tx_ref and public key.
+    """
+    raw_id = payload.donation_id or payload.donation
+    if not raw_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Donation ID is required")
+    try:
+        target_donation_id = uuid.UUID(str(raw_id).strip())
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid donation UUID: {raw_id}")
+
+    d_res = await db.execute(
+        select(Donation).filter(Donation.id == target_donation_id, Donation.is_deleted == False)
+    )
+    donation = d_res.scalars().first()
+    if not donation:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Donation drive not found")
+
+    ref = f"JM-{uuid.uuid4()}"
+    donor_account_name = current_user.full_name if current_user else donation.title
+    db_tx = Transaction(
+        donation_id=target_donation_id,
+        user_id=current_user.id if current_user else None,
+        account_name=donor_account_name[:100],
+        account_number="Card",
+        amount=payload.amount,
+        payment_method="Card",
+        payment_status="Pending",
+        transaction_reference=ref,
+        donated_at=datetime.now(timezone.utc).replace(tzinfo=None),
+    )
+    db.add(db_tx)
+    await db.commit()
+    await db.refresh(db_tx)
+
+    return {
+        "message": "Card payment initiated",
+        "tx_ref": db_tx.transaction_reference,
+        "public_key": settings.FLUTTERWAVE_PUBLIC_KEY,
+        "amount": float(db_tx.amount),
+        "currency": "KES",
+        "transaction_id": str(db_tx.id),
+    }
+
+
+class FlutterwaveVerifyInput(BaseModel):
+    tx_ref: str
+    flw_ref: Optional[str] = ""
+    amount: Optional[float] = 0.0
+    donation_id: Optional[str] = None
+    status: Optional[str] = "successful"
+
+
+@router.post("/verify_flutterwave_payment")
+@router.post("/verify_flutterwave_payment/", include_in_schema=False)
+@router.post("/verify-flutterwave-payment", include_in_schema=False)
+@router.post("/verify-flutterwave-payment/", include_in_schema=False)
+async def verify_flutterwave_payment(
+    payload: FlutterwaveVerifyInput,
+    current_user: Optional[User] = Depends(get_optional_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Endpoint called by the client after card/Flutterwave charge to verify and persist transaction status.
+    """
+    tx_ref = payload.tx_ref
+    flw_ref = payload.flw_ref or ""
+    status_param = (payload.status or "successful").lower()
+
+    if not tx_ref:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing tx_ref")
+
+    # 1. Find existing transaction
+    result = await db.execute(select(Transaction).filter(Transaction.transaction_reference == tx_ref))
+    tx = result.scalars().first()
+
+    # 2. Create if missing (Direct Charge flow)
+    if not tx:
+        raw_id = payload.donation_id
+        if not raw_id:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing donation_id for transaction")
+        try:
+            target_donation_id = uuid.UUID(str(raw_id).strip())
+        except ValueError:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid donation UUID: {raw_id}")
+
+        tx = Transaction(
+            transaction_reference=tx_ref,
+            donation_id=target_donation_id,
+            amount=payload.amount or 0.0,
+            payment_method="Card",
+            payment_status="Pending",
+            user_id=current_user.id if current_user else None,
+            account_number="Card",
+            donated_at=datetime.now(timezone.utc).replace(tzinfo=None),
+        )
+        db.add(tx)
+        await db.commit()
+        await db.refresh(tx)
+
+    if tx.payment_status == "Completed":
+        return {
+            "message": "Transaction already processed",
+            "transaction_id": str(tx.id),
+            "status": tx.payment_status,
+        }
+
+    if status_param in ("successful", "completed", "success"):
+        tx.payment_status = "Completed"
+        tx.mpesa_receipt = flw_ref
+        tx.completed_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    else:
+        tx.payment_status = "Failed"
+
+    await db.commit()
+    await db.refresh(tx)
+
+    return {
+        "message": "Transaction updated successfully",
+        "transaction_id": str(tx.id),
+        "status": tx.payment_status,
     }
 
 
