@@ -33,6 +33,7 @@ router = APIRouter()
 # ==================== Transactions ====================
 
 @router.get("/", response_model=List[TransactionResponse])
+@router.get("", response_model=List[TransactionResponse], include_in_schema=False)
 async def list_transactions(
     skip: int = 0,
     limit: int = 100,
@@ -508,9 +509,6 @@ class CardPaymentInput(BaseModel):
     amount: float
     donation_id: Optional[str] = None
     donation: Optional[str] = None
-    card_number: Optional[str] = None
-    expiry_date: Optional[str] = None
-    cvv: Optional[str] = None
 
 
 @router.post("/initiate_card_payment", status_code=status.HTTP_201_CREATED)

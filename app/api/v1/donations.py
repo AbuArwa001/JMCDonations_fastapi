@@ -9,6 +9,7 @@ from sqlalchemy.orm import selectinload
 
 from app.db.session import get_db
 from app.models.donations import Donation, SavedDonation
+from app.models.categories import Category
 from app.models.transactions import Transaction
 from app.models.ratings import Rating
 from app.models.users import User
@@ -59,12 +60,19 @@ async def build_donation_response(db: AsyncSession, donation: Donation) -> Donat
     remaining_days = (donation.end_date.date() - now.date()).days if donation.end_date else 0
     is_expired = remaining_days < 0
 
+    # 4. Resolve category name
+    cat_name = None
+    if donation.category_id:
+        cat_res = await db.execute(select(Category.category_name).filter(Category.id == donation.category_id))
+        cat_name = cat_res.scalar()
+
     resp = DonationResponse.model_validate(donation)
     resp.collected_amount = collected
     resp.donor_count = donors
     resp.average_rating = avg_rating
     resp.remaining_days = remaining_days
     resp.is_expired = is_expired
+    resp.category_name = cat_name
     return resp
 
 
@@ -72,17 +80,25 @@ async def build_donation_response(db: AsyncSession, donation: Donation) -> Donat
 async def list_donations(
     skip: int = 0,
     limit: int = 100,
+    page: Optional[int] = None,
     category_id: Optional[uuid.UUID] = None,
+    category_name: Optional[str] = None,
+    category__category_name: Optional[str] = Query(None, include_in_schema=False),
+    category: Optional[str] = Query(None, include_in_schema=False),
     status: Optional[str] = None,
     is_featured: Optional[bool] = None,
     search: Optional[str] = None,
+    ordering: Optional[str] = None,
     include_deleted: bool = False,
     deleted_only: bool = False,
     db: AsyncSession = Depends(get_db)
 ):
     """
-    List donation drives with filtering, search, and soft-delete exclusions.
+    List donation drives with filtering, search, ordering, and pagination.
     """
+    if page and page > 0:
+        skip = (page - 1) * limit
+
     query = select(Donation)
 
     if deleted_only:
@@ -90,25 +106,62 @@ async def list_donations(
     elif not include_deleted:
         query = query.filter(Donation.is_deleted == False)
 
-    if category_id:
-        query = query.filter(Donation.category_id == category_id)
+    # Resolve category filter from any parameter alias
+    cat_filter = category_id
+    cat_name_filter = category_name or category__category_name or category
+    joined_category = False
+
+    if cat_name_filter and not cat_filter:
+        try:
+            cat_filter = uuid.UUID(str(cat_name_filter).strip())
+        except ValueError:
+            cat_filter = None
+
+    if cat_filter:
+        query = query.filter(Donation.category_id == cat_filter)
+    elif cat_name_filter and str(cat_name_filter).strip().lower() != "all":
+        query = query.join(Category, Donation.category_id == Category.id)
+        joined_category = True
+        query = query.filter(Category.category_name.ilike(str(cat_name_filter).strip()))
+
     if status:
         query = query.filter(Donation.status == status)
     if is_featured is not None:
         query = query.filter(Donation.is_featured == is_featured)
 
-    if search:
-        search_term = f"%{search}%"
-        query = query.filter(
-            or_(
-                Donation.title.ilike(search_term),
-                Donation.description.ilike(search_term),
-                Donation.account_name.ilike(search_term),
-                Donation.paybill_number.ilike(search_term)
+    if search and search.strip():
+        terms = [t for t in search.strip().split() if t]
+        if not joined_category:
+            query = query.outerjoin(Category, Donation.category_id == Category.id)
+            joined_category = True
+        for term in terms:
+            search_pattern = f"%{term}%"
+            query = query.filter(
+                or_(
+                    Donation.title.ilike(search_pattern),
+                    Donation.description.ilike(search_pattern),
+                    Donation.account_name.ilike(search_pattern),
+                    Donation.paybill_number.ilike(search_pattern),
+                    Category.category_name.ilike(search_pattern),
+                )
             )
-        )
 
-    query = query.order_by(Donation.created_at.desc()).offset(skip).limit(limit)
+    # Ordering
+    if ordering:
+        if ordering == "target_amount":
+            query = query.order_by(Donation.target_amount.asc())
+        elif ordering == "-target_amount":
+            query = query.order_by(Donation.target_amount.desc())
+        elif ordering == "created_at":
+            query = query.order_by(Donation.created_at.asc())
+        elif ordering == "-created_at":
+            query = query.order_by(Donation.created_at.desc())
+        else:
+            query = query.order_by(Donation.created_at.desc())
+    else:
+        query = query.order_by(Donation.created_at.desc())
+
+    query = query.offset(skip).limit(limit)
     result = await db.execute(query)
     donations = result.scalars().all()
 

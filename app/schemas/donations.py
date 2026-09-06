@@ -51,6 +51,7 @@ class DonationResponse(DonationBase):
     average_rating: float = 0.0
     remaining_days: int = 0
     is_expired: bool = False
+    category_name: Optional[str] = None
     
     created_at: datetime
     updated_at: datetime
