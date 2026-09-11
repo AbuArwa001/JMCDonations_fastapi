@@ -30,6 +30,17 @@ async def list_bulletins(
     result = await db.execute(query)
     return result.scalars().all()
 
+@router.get("/{bulletin_id}", response_model=BulletinResponse)
+async def get_bulletin(
+    bulletin_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    result = await db.execute(select(FridayBulletin).filter(FridayBulletin.id == bulletin_id))
+    bulletin = result.scalars().first()
+    if not bulletin:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bulletin not found")
+    return bulletin
+
 @router.post("/", response_model=BulletinResponse, status_code=status.HTTP_201_CREATED)
 async def create_bulletin(
     title: str = Form(...),
