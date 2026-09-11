@@ -32,6 +32,10 @@ static_dir.mkdir(parents=True, exist_ok=True)
 (static_dir / "donations").mkdir(parents=True, exist_ok=True)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
+friday_bulletin_dir = Path("FRIDAY_BULETIN")
+friday_bulletin_dir.mkdir(parents=True, exist_ok=True)
+app.mount("/static/bulletins", StaticFiles(directory="FRIDAY_BULETIN"), name="static_bulletins")
+
 @app.get("/")
 def read_root():
     return {"message": f"Welcome to {settings.PROJECT_NAME} API"}

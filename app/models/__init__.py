@@ -11,3 +11,4 @@ from app.models.ratings import Rating
 from app.models.core_config import AppFeature
 from app.models.zakat import NisabRate
 from app.models.community import CommunityContent
+from app.models.bulletins import FridayBulletin
