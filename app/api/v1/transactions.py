@@ -213,7 +213,8 @@ async def initiate_stk_push(
         shortcode = settings.MPESA_SHORTCODE
 
     # 6. Trigger M-Pesa STK Push
-    account_ref = "".join(c for c in (donation.account_number or account_name or "JamiaWaqf") if c.isalnum())[:12]
+    raw_account_ref = donation.account_number or donation.account_name or donor_account_name or "JamiaWaqf"
+    account_ref = "".join(c for c in raw_account_ref if c.isalnum())[:12] or "JamiaWaqf"
     trans_desc = f"Donation {donation.title[:15]}"[:30]
 
     try:
