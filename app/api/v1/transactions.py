@@ -24,6 +24,7 @@ from app.api.dependencies.auth import (
 )
 from app.services.mpesa import mpesa_service
 from app.services.paypal import paypal_service
+from app.services.firebase import firebase_service
 import logging
 
 logger = logging.getLogger(__name__)
@@ -843,6 +844,19 @@ async def mpesa_callback(request: Request, db: AsyncSession = Depends(get_db)):
                 tx.payment_status = "Failed"
                 logger.info(f"Transaction {tx.id} marked as Failed. Reason: {result_desc}")
             await db.commit()
+            
+            # Send Push Notification
+            if tx.user_id:
+                user_res = await db.execute(select(User).filter(User.id == tx.user_id))
+                user_obj = user_res.scalars().first()
+                if user_obj and user_obj.fcm_token:
+                    title = "Transaction Successful" if str(result_code) == "0" else "Transaction Failed"
+                    body = f"Your donation of KES {tx.amount} was {'successful' if str(result_code) == '0' else 'unsuccessful'}."
+                    try:
+                        firebase_service.send_notification(title, body, user_obj.fcm_token)
+                        logger.info(f"FCM Notification sent to {user_obj.email} for Transaction {tx.id}")
+                    except Exception as e:
+                        logger.error(f"Failed to send FCM notification for tx {tx.id}: {e}")
         else:
             logger.warning(f"Transaction not found for CheckoutRequestID={checkout_id}")
 
