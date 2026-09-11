@@ -1,11 +1,13 @@
 import uuid
 import re
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_, and_, case
 from sqlalchemy.orm import selectinload
+from sqlalchemy.orm.attributes import flag_modified
 
 from app.db.session import get_db
 from app.models.donations import Donation, SavedDonation
@@ -300,6 +302,112 @@ async def update_donation(
         setattr(donation, field, value)
 
     donation.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    await db.commit()
+    await db.refresh(donation)
+    return await build_donation_response(db, donation)
+
+
+@router.post("/{donation_id}/images", response_model=DonationResponse)
+@router.post("/{donation_id}/images/", response_model=DonationResponse)
+@router.patch("/{donation_id}/images", response_model=DonationResponse)
+@router.patch("/{donation_id}/images/", response_model=DonationResponse)
+async def upload_donation_images(
+    donation_id: uuid.UUID,
+    files: Optional[List[UploadFile]] = File(None),
+    uploaded_images: Optional[List[UploadFile]] = File(None),
+    current_user: User = Depends(get_current_admin_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Upload one or more images for a donation drive gallery (Admin only).
+    """
+    result = await db.execute(select(Donation).filter(Donation.id == donation_id))
+    donation = result.scalars().first()
+    if not donation:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Donation not found")
+
+    incoming_files: List[UploadFile] = []
+    if files:
+        incoming_files.extend(files)
+    if uploaded_images:
+        incoming_files.extend(uploaded_images)
+
+    if not incoming_files:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No image files provided."
+        )
+
+    upload_dir = Path("static/donations")
+    upload_dir.mkdir(parents=True, exist_ok=True)
+
+    current_images = list(donation.image_urls or [])
+    for idx, f in enumerate(incoming_files):
+        if not f.content_type or not f.content_type.startswith("image/"):
+            continue
+        ext = f.filename.split(".")[-1] if f.filename and "." in f.filename else "jpg"
+        timestamp = int(datetime.now(timezone.utc).timestamp())
+        filename = f"{donation_id}_{timestamp}_{idx}_{uuid.uuid4().hex[:6]}.{ext}"
+        dest_path = upload_dir / filename
+
+        content = await f.read()
+        with open(dest_path, "wb") as out_file:
+            out_file.write(content)
+
+        relative_url = f"/static/donations/{filename}"
+        current_images.append(relative_url)
+
+    donation.image_urls = current_images
+    flag_modified(donation, "image_urls")
+    donation.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    await db.commit()
+    await db.refresh(donation)
+    return await build_donation_response(db, donation)
+
+
+@router.delete("/{donation_id}/images", response_model=DonationResponse)
+@router.delete("/{donation_id}/images/", response_model=DonationResponse)
+async def delete_donation_image(
+    donation_id: uuid.UUID,
+    image_url: str = Query(..., description="URL or path of image to delete from donation gallery"),
+    current_user: User = Depends(get_current_admin_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Delete a specific gallery image from a donation drive (Admin only).
+    """
+    result = await db.execute(select(Donation).filter(Donation.id == donation_id))
+    donation = result.scalars().first()
+    if not donation:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Donation not found")
+
+    current_images = list(donation.image_urls or [])
+    target = image_url.strip()
+
+    # Match by exact URL, relative path, or filename
+    matched = None
+    for img in current_images:
+        if img == target or target in img or img in target:
+            matched = img
+            break
+
+    if not matched:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image not found in donation drive")
+
+    current_images.remove(matched)
+    donation.image_urls = current_images
+    flag_modified(donation, "image_urls")
+    donation.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
+
+    # Clean up file on disk if stored locally
+    try:
+        clean_path = matched.lstrip("/")
+        local_file = Path(clean_path)
+        if local_file.exists() and "static/donations" in clean_path:
+            local_file.unlink()
+    except Exception:
+        pass
+
     await db.commit()
     await db.refresh(donation)
     return await build_donation_response(db, donation)
