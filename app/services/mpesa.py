@@ -17,12 +17,19 @@ class MpesaService:
         cs = consumer_secret or self.consumer_secret
         async with httpx.AsyncClient() as client:
             url = f"{self.base_url}/oauth/v1/generate?grant_type=client_credentials"
-            response = await client.get(
-                url,
-                auth=(ck, cs),
-                timeout=15
-            )
-            data = response.json()
+            try:
+                response = await client.get(
+                    url,
+                    auth=(ck, cs),
+                    timeout=15
+                )
+                response.raise_for_status()
+                data = response.json()
+            except httpx.HTTPError:
+                raise ValueError("Connection failed (Network Error).")
+            except ValueError:
+                raise ValueError("Service temporarily unavailable (Invalid Response).")
+
             if "access_token" not in data:
                 raise ValueError(f"Failed to get M-Pesa access token: {data}")
             return data["access_token"]
@@ -52,27 +59,33 @@ class MpesaService:
         clean_desc = "".join(c for c in description if c.isalnum() or c in " -_")[:30] if description else "Donation"
 
         async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{self.base_url}/mpesa/stkpush/v1/processrequest",
-                json={
-                    "BusinessShortCode": sc,
-                    "Password": password,
-                    "Timestamp": timestamp,
-                    "TransactionType": "CustomerPayBillOnline",
-                    "Amount": max(1, int(round(amount))),
-                    "PhoneNumber": phone_number,
-                    "PartyA": phone_number,
-                    "PartyB": sc,
-                    "CallBackURL": settings.MPESA_CALLBACK_URL,
-                    "AccountReference": clean_ref,
-                    "TransactionDesc": clean_desc,
-                },
-                headers={
-                    "Authorization": f"Bearer {token}",
-                },
-                timeout=30
-            )
-            return response.json()
+            try:
+                response = await client.post(
+                    f"{self.base_url}/mpesa/stkpush/v1/processrequest",
+                    json={
+                        "BusinessShortCode": sc,
+                        "Password": password,
+                        "Timestamp": timestamp,
+                        "TransactionType": "CustomerPayBillOnline",
+                        "Amount": max(1, int(round(amount))),
+                        "PhoneNumber": phone_number,
+                        "PartyA": phone_number,
+                        "PartyB": sc,
+                        "CallBackURL": settings.MPESA_CALLBACK_URL,
+                        "AccountReference": clean_ref,
+                        "TransactionDesc": clean_desc,
+                    },
+                    headers={
+                        "Authorization": f"Bearer {token}",
+                    },
+                    timeout=30
+                )
+                response.raise_for_status()
+                return response.json()
+            except httpx.HTTPError:
+                raise ValueError("Service temporarily unavailable (Network Error). Please try again.")
+            except ValueError:
+                raise ValueError("Service temporarily unavailable (Bad Gateway). Please try again.")
 
     async def query_stk_status(
         self,
@@ -92,19 +105,25 @@ class MpesaService:
         token = await self.get_access_token(consumer_key=consumer_key, consumer_secret=consumer_secret)
 
         async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{self.base_url}/mpesa/stkpushquery/v1/query",
-                json={
-                    "BusinessShortCode": sc,
-                    "Password": password,
-                    "Timestamp": timestamp,
-                    "CheckoutRequestID": checkout_request_id,
-                },
-                headers={
-                    "Authorization": f"Bearer {token}",
-                },
-                timeout=15
-            )
-            return response.json()
+            try:
+                response = await client.post(
+                    f"{self.base_url}/mpesa/stkpushquery/v1/query",
+                    json={
+                        "BusinessShortCode": sc,
+                        "Password": password,
+                        "Timestamp": timestamp,
+                        "CheckoutRequestID": checkout_request_id,
+                    },
+                    headers={
+                        "Authorization": f"Bearer {token}",
+                    },
+                    timeout=15
+                )
+                response.raise_for_status()
+                return response.json()
+            except httpx.HTTPError:
+                raise ValueError("Service temporarily unavailable (Network Error).")
+            except ValueError:
+                raise ValueError("Service temporarily unavailable (Bad Gateway).")
 
 mpesa_service = MpesaService()
