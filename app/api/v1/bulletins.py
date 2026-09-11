@@ -41,6 +41,9 @@ async def get_bulletin(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bulletin not found")
     return bulletin
 
+from app.services.firebase import firebase_service
+from app.models.khutba import NotificationLog
+
 @router.post("/", response_model=BulletinResponse, status_code=status.HTTP_201_CREATED)
 async def create_bulletin(
     title: str = Form(...),
@@ -49,6 +52,7 @@ async def create_bulletin(
     pdf_file: UploadFile = File(...),
     cover_image: Optional[UploadFile] = File(None),
     is_active: bool = Form(True),
+    send_notification: bool = Form(True),
     current_user = Depends(get_current_admin_user),
     db: AsyncSession = Depends(get_db)
 ):
@@ -69,7 +73,6 @@ async def create_bulletin(
         try:
             cover_image_url = upload_file_to_s3(cover_image.file, cover_object_name, content_type=cover_image.content_type)
         except Exception as e:
-            # Note: Might want to delete the PDF here if cover upload fails, but keeping it simple for now
             raise HTTPException(status_code=500, detail=f"Failed to upload cover image: {str(e)}")
 
     bulletin = FridayBulletin(
@@ -84,7 +87,97 @@ async def create_bulletin(
     await db.commit()
     await db.refresh(bulletin)
     
+    # Broadcast Push Notification to all users
+    if send_notification and is_active:
+        issue_str = f" #{issue_number}" if issue_number else ""
+        notif_title = f"New Friday Bulletin Issue{issue_str} Out Now!"
+        notif_body = f"{title} - Read today's Friday sermon & community updates."
+        
+        payload = {
+            "type": "bulletin",
+            "bulletin_id": str(bulletin.id),
+            "title": str(bulletin.title),
+            "issue_number": str(bulletin.issue_number or "")
+        }
+
+        # Send to all_users and bulletins topics
+        firebase_service.send_topic_notification(
+            topic="all_users",
+            title=notif_title,
+            body=notif_body,
+            data=payload,
+            image_url=cover_image_url
+        )
+        firebase_service.send_topic_notification(
+            topic="bulletins",
+            title=notif_title,
+            body=notif_body,
+            data=payload,
+            image_url=cover_image_url
+        )
+
+        # Log notification in DB
+        log = NotificationLog(
+            title=notif_title,
+            body=notif_body,
+            image_url=cover_image_url,
+            recipient_count=1
+        )
+        db.add(log)
+        await db.commit()
+
     return bulletin
+
+@router.post("/{bulletin_id}/notify")
+async def notify_bulletin(
+    bulletin_id: int,
+    current_user = Depends(get_current_admin_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Manually broadcast a push notification for a specific Friday Bulletin to all users.
+    """
+    result = await db.execute(select(FridayBulletin).filter(FridayBulletin.id == bulletin_id))
+    bulletin = result.scalars().first()
+    if not bulletin:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bulletin not found")
+
+    issue_str = f" #{bulletin.issue_number}" if bulletin.issue_number else ""
+    notif_title = f"The Friday Bulletin Issue{issue_str}"
+    notif_body = f"{bulletin.title} - Tap to read online."
+    
+    payload = {
+        "type": "bulletin",
+        "bulletin_id": str(bulletin.id),
+        "title": str(bulletin.title),
+        "issue_number": str(bulletin.issue_number or "")
+    }
+
+    firebase_service.send_topic_notification(
+        topic="all_users",
+        title=notif_title,
+        body=notif_body,
+        data=payload,
+        image_url=bulletin.cover_image_path
+    )
+    firebase_service.send_topic_notification(
+        topic="bulletins",
+        title=notif_title,
+        body=notif_body,
+        data=payload,
+        image_url=bulletin.cover_image_path
+    )
+
+    log = NotificationLog(
+        title=notif_title,
+        body=notif_body,
+        image_url=bulletin.cover_image_path,
+        recipient_count=1
+    )
+    db.add(log)
+    await db.commit()
+
+    return {"status": "success", "message": "Notification broadcast initiated", "bulletin_id": bulletin_id}
 
 def _extract_s3_key(url: str) -> Optional[str]:
     if not url:

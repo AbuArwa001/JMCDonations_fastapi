@@ -130,15 +130,42 @@ class FirebaseService:
         await db.refresh(user)
         return user
 
-    def send_notification(self, title: str, body: str, token: str):
-        message = messaging.Message(
-            notification=messaging.Notification(
+    def send_notification(self, title: str, body: str, token: str, data: dict = None, image_url: str = None):
+        try:
+            notification = messaging.Notification(
                 title=title,
-                body=body
-            ),
-            token=token
-        )
-        response = messaging.send(message)
-        return response
+                body=body,
+                image=image_url if image_url else None
+            )
+            message = messaging.Message(
+                notification=notification,
+                data={str(k): str(v) for k, v in data.items()} if data else None,
+                token=token
+            )
+            response = messaging.send(message)
+            return response
+        except Exception as e:
+            logger.error(f"Failed to send direct FCM notification: {e}")
+            return None
+
+    def send_topic_notification(self, topic: str, title: str, body: str, data: dict = None, image_url: str = None):
+        try:
+            notification = messaging.Notification(
+                title=title,
+                body=body,
+                image=image_url if image_url else None
+            )
+            message = messaging.Message(
+                notification=notification,
+                data={str(k): str(v) for k, v in data.items()} if data else None,
+                topic=topic
+            )
+            response = messaging.send(message)
+            logger.info(f"Broadcast FCM sent to topic '{topic}': {response}")
+            return response
+        except Exception as e:
+            logger.error(f"Failed to send FCM topic notification to '{topic}': {e}")
+            return None
 
 firebase_service = FirebaseService()
+
