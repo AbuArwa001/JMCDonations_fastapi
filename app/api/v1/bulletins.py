@@ -1,5 +1,4 @@
 import os
-import shutil
 import uuid
 from typing import List, Optional
 from datetime import date
@@ -11,11 +10,10 @@ from app.db.session import get_db
 from app.models.bulletins import FridayBulletin
 from app.schemas.bulletins import BulletinResponse
 from app.api.dependencies.auth import get_current_admin_user
+from app.services.aws import upload_file_to_s3, delete_file_from_s3
+from app.core.config import settings
 
 router = APIRouter()
-
-UPLOAD_DIR = "FRIDAY_BULETIN"
-os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 @router.get("/", response_model=List[BulletinResponse])
 async def list_bulletins(
@@ -46,30 +44,29 @@ async def create_bulletin(
     if not pdf_file.filename.endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are allowed for bulletins.")
 
-    # Save PDF
-    pdf_filename = f"{uuid.uuid4().hex}_{pdf_file.filename}"
-    pdf_path = os.path.join(UPLOAD_DIR, pdf_filename)
-    with open(pdf_path, "wb") as buffer:
-        shutil.copyfileobj(pdf_file.file, buffer)
+    # Save PDF to S3
+    pdf_object_name = f"bulletins/{uuid.uuid4().hex}_{pdf_file.filename}"
+    try:
+        pdf_url = upload_file_to_s3(pdf_file.file, pdf_object_name, content_type="application/pdf")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to upload PDF: {str(e)}")
 
-    # Save Cover Image
-    cover_image_path = None
+    # Save Cover Image to S3
+    cover_image_url = None
     if cover_image:
-        cover_filename = f"cover_{uuid.uuid4().hex}_{cover_image.filename}"
-        cover_path = os.path.join(UPLOAD_DIR, cover_filename)
-        with open(cover_path, "wb") as buffer:
-            shutil.copyfileobj(cover_image.file, buffer)
-        cover_image_path = f"/static/bulletins/{cover_filename}"
-
-    # Relative static path for response
-    static_pdf_path = f"/static/bulletins/{pdf_filename}"
+        cover_object_name = f"bulletins/cover_{uuid.uuid4().hex}_{cover_image.filename}"
+        try:
+            cover_image_url = upload_file_to_s3(cover_image.file, cover_object_name, content_type=cover_image.content_type)
+        except Exception as e:
+            # Note: Might want to delete the PDF here if cover upload fails, but keeping it simple for now
+            raise HTTPException(status_code=500, detail=f"Failed to upload cover image: {str(e)}")
 
     bulletin = FridayBulletin(
         title=title,
         issue_number=issue_number,
         published_date=published_date,
-        pdf_path=static_pdf_path,
-        cover_image_path=cover_image_path,
+        pdf_path=pdf_url,
+        cover_image_path=cover_image_url,
         is_active=is_active
     )
     db.add(bulletin)
@@ -77,6 +74,14 @@ async def create_bulletin(
     await db.refresh(bulletin)
     
     return bulletin
+
+def _extract_s3_key(url: str) -> Optional[str]:
+    if not url:
+        return None
+    bucket_prefix = f"https://{settings.AWS_STORAGE_BUCKET_NAME}.s3.amazonaws.com/"
+    if url.startswith(bucket_prefix):
+        return url[len(bucket_prefix):]
+    return None
 
 @router.delete("/{bulletin_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_bulletin(
@@ -89,18 +94,16 @@ async def delete_bulletin(
     if not bulletin:
         raise HTTPException(status_code=404, detail="Bulletin not found")
 
-    # Optionally delete physical files
+    # Delete physical files from S3
     if bulletin.pdf_path:
-        filename = bulletin.pdf_path.split("/")[-1]
-        filepath = os.path.join(UPLOAD_DIR, filename)
-        if os.path.exists(filepath):
-            os.remove(filepath)
+        pdf_key = _extract_s3_key(bulletin.pdf_path)
+        if pdf_key:
+            delete_file_from_s3(pdf_key)
             
     if bulletin.cover_image_path:
-        filename = bulletin.cover_image_path.split("/")[-1]
-        filepath = os.path.join(UPLOAD_DIR, filename)
-        if os.path.exists(filepath):
-            os.remove(filepath)
+        cover_key = _extract_s3_key(bulletin.cover_image_path)
+        if cover_key:
+            delete_file_from_s3(cover_key)
 
     await db.delete(bulletin)
     await db.commit()

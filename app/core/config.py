@@ -35,6 +35,12 @@ class Settings(BaseSettings):
     PAYPAL_CALLBACK_URL: str = "https://donations-api.jamiamosque.co.ke/api/v1/transactions/paypal_callback/"
     FLUTTERWAVE_PUBLIC_KEY: str = ""
     
+    # AWS S3 Storage
+    AWS_ACCESS_KEY_ID: str = ""
+    AWS_SECRET_ACCESS_KEY: str = ""
+    AWS_S3_REGION_NAME: str = "us-east-1"
+    AWS_STORAGE_BUCKET_NAME: str = "jmcdonations"
+    
     # Firebase
     FIREBASE_API_KEY: str = ""
     FIREBASE_SERVICE_ACCOUNT_JSON: str = ""
@@ -52,3 +58,12 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
 settings = Settings()
+print(
+    f"AWS_ACCESS_KEY_ID: {settings.AWS_ACCESS_KEY_ID}\n"
+    f"AWS_SECRET_ACCESS_KEY: {settings.AWS_SECRET_ACCESS_KEY}\n"
+    f"AWS_S3_REGION_NAME: {settings.AWS_S3_REGION_NAME}\n"
+    f"AWS_STORAGE_BUCKET_NAME: {settings.AWS_STORAGE_BUCKET_NAME}\n"
+    f"AWS_S3_BUCKET_NAME: {settings.AWS_STORAGE_BUCKET_NAME}\n"
+    f""
+)
+
