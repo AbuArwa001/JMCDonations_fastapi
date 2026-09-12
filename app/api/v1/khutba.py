@@ -1,5 +1,7 @@
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status
+from datetime import date, time
+import uuid
+from fastapi import APIRouter, Depends, HTTPException, status, Form, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from datetime import datetime, timezone
@@ -14,6 +16,7 @@ from app.schemas.khutba import (
 )
 from app.api.dependencies.auth import get_current_admin_user
 from app.services.firebase import firebase_service
+from app.services.s3_service import upload_file_to_s3
 
 router = APIRouter()
 
@@ -50,11 +53,34 @@ async def list_khutbas(
 
 @router.post("/", response_model=JumaKhutbaResponse, status_code=status.HTTP_201_CREATED)
 async def create_khutba(
-    khutba_in: JumaKhutbaCreate,
+    title: str = Form(...),
+    imam_name: str = Form(...),
+    khutba_date: date = Form(...),
+    khutba_time: time = Form(...),
+    topic_summary: Optional[str] = Form(None),
+    published: bool = Form(True),
+    imam_photo: Optional[UploadFile] = File(None),
     current_user: User = Depends(get_current_admin_user),
     db: AsyncSession = Depends(get_db)
 ):
-    db_khutba = JumaKhutba(**khutba_in.model_dump(), created_by_id=current_user.id)
+    imam_photo_url = None
+    if imam_photo:
+        object_name = f"khutba/imam_{uuid.uuid4().hex}_{imam_photo.filename}"
+        try:
+            imam_photo_url = await upload_file_to_s3(imam_photo, object_name)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to upload photo: {str(e)}")
+
+    db_khutba = JumaKhutba(
+        title=title,
+        imam_name=imam_name,
+        khutba_date=khutba_date,
+        khutba_time=khutba_time,
+        topic_summary=topic_summary,
+        published=published,
+        imam_photo=imam_photo_url,
+        created_by_id=current_user.id
+    )
     db.add(db_khutba)
     await db.commit()
     await db.refresh(db_khutba)
@@ -89,7 +115,13 @@ async def get_khutba(khutba_id: int, db: AsyncSession = Depends(get_db)):
 @router.put("/{khutba_id}", response_model=JumaKhutbaResponse)
 async def update_khutba(
     khutba_id: int,
-    khutba_in: JumaKhutbaUpdate,
+    title: Optional[str] = Form(None),
+    imam_name: Optional[str] = Form(None),
+    khutba_date: Optional[date] = Form(None),
+    khutba_time: Optional[time] = Form(None),
+    topic_summary: Optional[str] = Form(None),
+    published: Optional[bool] = Form(None),
+    imam_photo: Optional[UploadFile] = File(None),
     current_user: User = Depends(get_current_admin_user),
     db: AsyncSession = Depends(get_db)
 ):
@@ -98,9 +130,20 @@ async def update_khutba(
     if not khutba:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Khutba not found")
 
-    update_data = khutba_in.model_dump(exclude_unset=True)
-    for field, value in update_data.items():
-        setattr(khutba, field, value)
+    if title is not None: khutba.title = title
+    if imam_name is not None: khutba.imam_name = imam_name
+    if khutba_date is not None: khutba.khutba_date = khutba_date
+    if khutba_time is not None: khutba.khutba_time = khutba_time
+    if topic_summary is not None: khutba.topic_summary = topic_summary
+    if published is not None: khutba.published = published
+
+    if imam_photo:
+        object_name = f"khutba/imam_{uuid.uuid4().hex}_{imam_photo.filename}"
+        try:
+            imam_photo_url = await upload_file_to_s3(imam_photo, object_name)
+            khutba.imam_photo = imam_photo_url
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to upload photo: {str(e)}")
 
     await db.commit()
     await db.refresh(khutba)
