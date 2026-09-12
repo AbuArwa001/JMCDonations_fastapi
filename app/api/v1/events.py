@@ -1,6 +1,8 @@
 import re
+import uuid
+from datetime import date, time
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Form, File, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
@@ -16,6 +18,7 @@ from app.schemas.content import (
 )
 from app.api.dependencies.auth import get_current_admin_user
 from app.services.firebase import firebase_service
+from app.services.aws import upload_file_to_s3
 
 router = APIRouter()
 
@@ -115,11 +118,54 @@ async def list_events(
 
 @router.post("/", response_model=EventResponse, status_code=status.HTTP_201_CREATED)
 async def create_event(
-    event_in: EventCreate,
+    title: str = Form(...),
+    story: str = Form(...),
+    event_date: date = Form(...),
+    start_time: time = Form(...),
+    venue_name: str = Form(...),
+    category_id: Optional[int] = Form(None),
+    end_time: Optional[time] = Form(None),
+    venue_address: Optional[str] = Form(None),
+    venue_map_link: Optional[str] = Form(None),
+    guest_name: Optional[str] = Form(None),
+    published: bool = Form(True),
+    cover_image: Optional[UploadFile] = File(None),
+    guest_photo: Optional[UploadFile] = File(None),
     current_user: User = Depends(get_current_admin_user),
     db: AsyncSession = Depends(get_db)
 ):
-    db_event = Event(**event_in.model_dump(), created_by_id=current_user.id)
+    cover_image_url = None
+    if cover_image:
+        cover_object_name = f"events/cover_{uuid.uuid4().hex}_{cover_image.filename}"
+        try:
+            cover_image_url = upload_file_to_s3(cover_image.file, cover_object_name, content_type=cover_image.content_type)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to upload cover image: {str(e)}")
+
+    guest_photo_url = None
+    if guest_photo:
+        guest_object_name = f"events/guest_{uuid.uuid4().hex}_{guest_photo.filename}"
+        try:
+            guest_photo_url = upload_file_to_s3(guest_photo.file, guest_object_name, content_type=guest_photo.content_type)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to upload guest photo: {str(e)}")
+
+    db_event = Event(
+        title=title,
+        story=story,
+        event_date=event_date,
+        start_time=start_time,
+        venue_name=venue_name,
+        category_id=category_id,
+        end_time=end_time,
+        venue_address=venue_address,
+        venue_map_link=venue_map_link,
+        guest_name=guest_name,
+        published=published,
+        cover_image=cover_image_url,
+        guest_photo=guest_photo_url,
+        created_by_id=current_user.id
+    )
     db.add(db_event)
     await db.commit()
     await db.refresh(db_event)
@@ -142,7 +188,19 @@ async def get_event(event_id: int, db: AsyncSession = Depends(get_db)):
 @router.put("/{event_id}", response_model=EventResponse)
 async def update_event(
     event_id: int,
-    event_in: EventUpdate,
+    title: Optional[str] = Form(None),
+    story: Optional[str] = Form(None),
+    event_date: Optional[date] = Form(None),
+    start_time: Optional[time] = Form(None),
+    venue_name: Optional[str] = Form(None),
+    category_id: Optional[int] = Form(None),
+    end_time: Optional[time] = Form(None),
+    venue_address: Optional[str] = Form(None),
+    venue_map_link: Optional[str] = Form(None),
+    guest_name: Optional[str] = Form(None),
+    published: Optional[bool] = Form(None),
+    cover_image: Optional[UploadFile] = File(None),
+    guest_photo: Optional[UploadFile] = File(None),
     current_user: User = Depends(get_current_admin_user),
     db: AsyncSession = Depends(get_db)
 ):
@@ -153,7 +211,33 @@ async def update_event(
     if not event:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
 
-    update_data = event_in.model_dump(exclude_unset=True)
+    update_data = {}
+    if title is not None: update_data['title'] = title
+    if story is not None: update_data['story'] = story
+    if event_date is not None: update_data['event_date'] = event_date
+    if start_time is not None: update_data['start_time'] = start_time
+    if venue_name is not None: update_data['venue_name'] = venue_name
+    if category_id is not None: update_data['category_id'] = category_id
+    if end_time is not None: update_data['end_time'] = end_time
+    if venue_address is not None: update_data['venue_address'] = venue_address
+    if venue_map_link is not None: update_data['venue_map_link'] = venue_map_link
+    if guest_name is not None: update_data['guest_name'] = guest_name
+    if published is not None: update_data['published'] = published
+
+    if cover_image:
+        cover_object_name = f"events/cover_{uuid.uuid4().hex}_{cover_image.filename}"
+        try:
+            update_data['cover_image'] = upload_file_to_s3(cover_image.file, cover_object_name, content_type=cover_image.content_type)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to upload cover image: {str(e)}")
+
+    if guest_photo:
+        guest_object_name = f"events/guest_{uuid.uuid4().hex}_{guest_photo.filename}"
+        try:
+            update_data['guest_photo'] = upload_file_to_s3(guest_photo.file, guest_object_name, content_type=guest_photo.content_type)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to upload guest photo: {str(e)}")
+
     for field, value in update_data.items():
         setattr(event, field, value)
 
