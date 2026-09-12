@@ -14,3 +14,5 @@ seed.py
 db.*
 add_duas_data.py
 FRIDAY_BULETIN
+server_migration_configs.md
+docker_aws_deployment_guide.md
