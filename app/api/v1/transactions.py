@@ -196,6 +196,8 @@ async def initiate_stk_push(
         matched_user = u_phone_res.scalars().first()
         if matched_user:
             target_user_id = matched_user.id
+            if not current_user:
+                current_user = matched_user
 
     # 5. Generate local reference & create Pending Transaction in DB
     ref = f"WS_{uuid.uuid4().hex[:12].upper()}"
