@@ -16,7 +16,7 @@ from app.schemas.khutba import (
 )
 from app.api.dependencies.auth import get_current_admin_user
 from app.services.firebase import firebase_service
-from app.services.s3_service import upload_file_to_s3
+from app.services.aws import upload_file_to_s3
 
 router = APIRouter()
 
@@ -67,7 +67,7 @@ async def create_khutba(
     if imam_photo:
         object_name = f"khutba/imam_{uuid.uuid4().hex}_{imam_photo.filename}"
         try:
-            imam_photo_url = await upload_file_to_s3(imam_photo, object_name)
+            imam_photo_url = upload_file_to_s3(imam_photo.file, object_name)
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to upload photo: {str(e)}")
 
@@ -140,7 +140,7 @@ async def update_khutba(
     if imam_photo:
         object_name = f"khutba/imam_{uuid.uuid4().hex}_{imam_photo.filename}"
         try:
-            imam_photo_url = await upload_file_to_s3(imam_photo, object_name)
+            imam_photo_url = upload_file_to_s3(imam_photo.file, object_name)
             khutba.imam_photo = imam_photo_url
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to upload photo: {str(e)}")
