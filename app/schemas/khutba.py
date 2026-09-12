@@ -47,8 +47,10 @@ class NotificationLogResponse(BaseModel):
     title: str
     body: str
     image_url: Optional[str] = None
+    notification_type: Optional[str] = "general"
     related_khutba_id: Optional[int] = None
     related_event_id: Optional[int] = None
+    related_donation_id: Optional[str] = None
     sent_at: datetime
     recipient_count: int
     model_config = ConfigDict(from_attributes=True)

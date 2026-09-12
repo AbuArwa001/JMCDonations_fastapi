@@ -13,8 +13,25 @@ from app.schemas.khutba import (
     NotificationLogResponse
 )
 from app.api.dependencies.auth import get_current_admin_user
+from app.services.firebase import firebase_service
 
 router = APIRouter()
+
+
+def _send_khutba_fcm(khutba: JumaKhutba) -> None:
+    """Broadcast FCM notification for a Khutba to JamiaGive users."""
+    title = f"Friday Khutba: {khutba.title}"
+    body = f"By {khutba.imam_name} on {khutba.khutba_date}. Tap to read the topic summary."
+    data = {
+        "type": "khutba",
+        "khutba_id": str(khutba.id),
+        "title": str(khutba.title),
+        "imam_name": str(khutba.imam_name),
+    }
+    image_url = khutba.imam_photo
+    firebase_service.send_topic_notification("all_users", title, body, data=data, image_url=image_url)
+    firebase_service.send_topic_notification("khutba", title, body, data=data, image_url=image_url)
+
 
 # ==================== Juma Khutba ====================
 
@@ -30,6 +47,7 @@ async def list_khutbas(
     result = await db.execute(query)
     return result.scalars().all()
 
+
 @router.post("/", response_model=JumaKhutbaResponse, status_code=status.HTTP_201_CREATED)
 async def create_khutba(
     khutba_in: JumaKhutbaCreate,
@@ -40,7 +58,23 @@ async def create_khutba(
     db.add(db_khutba)
     await db.commit()
     await db.refresh(db_khutba)
+
+    # Auto-broadcast to JamiaGive users on creation
+    if db_khutba.published:
+        _send_khutba_fcm(db_khutba)
+        log = NotificationLog(
+            title=f"Friday Khutba: {db_khutba.title}",
+            body=f"By {db_khutba.imam_name} on {db_khutba.khutba_date}",
+            image_url=db_khutba.imam_photo,
+            notification_type="khutba",
+            related_khutba_id=db_khutba.id,
+            recipient_count=1,
+        )
+        db.add(log)
+        await db.commit()
+
     return db_khutba
+
 
 @router.get("/{khutba_id}", response_model=JumaKhutbaResponse)
 async def get_khutba(khutba_id: int, db: AsyncSession = Depends(get_db)):
@@ -49,6 +83,7 @@ async def get_khutba(khutba_id: int, db: AsyncSession = Depends(get_db)):
     if not khutba:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Khutba not found")
     return khutba
+
 
 @router.patch("/{khutba_id}", response_model=JumaKhutbaResponse)
 @router.put("/{khutba_id}", response_model=JumaKhutbaResponse)
@@ -71,6 +106,7 @@ async def update_khutba(
     await db.refresh(khutba)
     return khutba
 
+
 @router.delete("/{khutba_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_khutba(
     khutba_id: int,
@@ -85,27 +121,34 @@ async def delete_khutba(
     await db.delete(khutba)
     await db.commit()
 
+
 @router.post("/{khutba_id}/notify")
 async def notify_khutba(
     khutba_id: int,
     current_user: User = Depends(get_current_admin_user),
     db: AsyncSession = Depends(get_db)
 ):
+    """Manually broadcast a push notification for a Khutba to all JamiaGive users."""
     result = await db.execute(select(JumaKhutba).filter(JumaKhutba.id == khutba_id))
     khutba = result.scalars().first()
     if not khutba:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Khutba not found")
 
+    _send_khutba_fcm(khutba)
+
     log = NotificationLog(
-        title=f"Juma Khutba: {khutba.title}",
-        body=f"By Sheikh {khutba.imam_name} on {khutba.khutba_date}",
+        title=f"Friday Khutba: {khutba.title}",
+        body=f"By {khutba.imam_name} on {khutba.khutba_date}",
         image_url=khutba.imam_photo,
+        notification_type="khutba",
         related_khutba_id=khutba.id,
-        recipient_count=1
+        recipient_count=1,
     )
     db.add(log)
     await db.commit()
+
     return {"status": "success", "message": "Notification broadcast initiated", "khutba_id": khutba_id}
+
 
 # ==================== Device Tokens ====================
 
@@ -133,6 +176,7 @@ async def register_device_token(token_in: DeviceTokenCreate, db: AsyncSession = 
     await db.refresh(device)
     return device
 
+
 # ==================== Notification Logs ====================
 
 @router.get("/logs", response_model=List[NotificationLogResponse])
@@ -141,5 +185,22 @@ async def list_notification_logs(
     current_user: User = Depends(get_current_admin_user),
     db: AsyncSession = Depends(get_db)
 ):
-    result = await db.execute(select(NotificationLog).order_by(NotificationLog.sent_at.desc()).limit(limit))
+    result = await db.execute(
+        select(NotificationLog).order_by(NotificationLog.sent_at.desc()).limit(limit)
+    )
+    return result.scalars().all()
+
+
+@router.get("/admin-notifications", response_model=List[NotificationLogResponse])
+async def list_admin_notifications(
+    limit: int = 30,
+    current_user: User = Depends(get_current_admin_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Returns admin-facing notification logs (donations completed, new drives, etc.)."""
+    result = await db.execute(
+        select(NotificationLog)
+        .order_by(NotificationLog.sent_at.desc())
+        .limit(limit)
+    )
     return result.scalars().all()

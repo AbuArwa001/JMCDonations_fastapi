@@ -121,6 +121,7 @@ async def create_bulletin(
             title=notif_title,
             body=notif_body,
             image_url=cover_image_url,
+            notification_type="bulletin",
             recipient_count=1
         )
         db.add(log)
@@ -172,6 +173,7 @@ async def notify_bulletin(
         title=notif_title,
         body=notif_body,
         image_url=bulletin.cover_image_path,
+        notification_type="bulletin",
         recipient_count=1
     )
     db.add(log)

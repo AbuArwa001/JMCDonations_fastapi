@@ -42,12 +42,17 @@ class NotificationLog(Base):
     title: Mapped[str] = mapped_column(String(255))
     body: Mapped[str] = mapped_column(Text)
     image_url: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)
-    
+
+    # Type tag: "khutba" | "event" | "bulletin" | "donation" | "admin_donation"
+    notification_type: Mapped[Optional[str]] = mapped_column(String(50), nullable=True, default="general")
+
     related_khutba_id: Mapped[Optional[int]] = mapped_column(ForeignKey("juma_khutbas.id", ondelete="SET NULL"), nullable=True)
     related_khutba: Mapped[Optional["JumaKhutba"]] = relationship("JumaKhutba", back_populates="notifications")
-    
+
     related_event_id: Mapped[Optional[int]] = mapped_column(ForeignKey("events.id", ondelete="SET NULL"), nullable=True)
     related_event: Mapped[Optional["Event"]] = relationship("Event", back_populates="notifications")
-    
+
+    related_donation_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+
     sent_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     recipient_count: Mapped[int] = mapped_column(Integer, default=0)

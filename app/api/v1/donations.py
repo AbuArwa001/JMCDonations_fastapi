@@ -15,6 +15,7 @@ from app.models.categories import Category
 from app.models.transactions import Transaction
 from app.models.ratings import Rating
 from app.models.users import User
+from app.models.khutba import NotificationLog
 from app.schemas.donations import (
     DonationCreate,
     DonationUpdate,
@@ -26,6 +27,7 @@ from app.api.dependencies.auth import (
     get_current_active_user,
     get_current_admin_user,
 )
+from app.services.firebase import firebase_service
 
 router = APIRouter()
 
@@ -200,6 +202,28 @@ async def create_donation(
     db.add(db_donation)
     await db.commit()
     await db.refresh(db_donation)
+
+    # Notify all JamiaGive users about the new donation drive
+    notif_title = f"New Donation Drive: {db_donation.title}"
+    notif_body = "A new fundraiser is now open. Tap to donate and make a difference!"
+    payload = {
+        "type": "donation",
+        "donation_id": str(db_donation.id),
+        "title": str(db_donation.title),
+    }
+    firebase_service.send_topic_notification("all_users", notif_title, notif_body, data=payload)
+    firebase_service.send_topic_notification("donations", notif_title, notif_body, data=payload)
+
+    log = NotificationLog(
+        title=notif_title,
+        body=notif_body,
+        notification_type="donation",
+        related_donation_id=str(db_donation.id),
+        recipient_count=1,
+    )
+    db.add(log)
+    await db.commit()
+
     return await build_donation_response(db, db_donation)
 
 

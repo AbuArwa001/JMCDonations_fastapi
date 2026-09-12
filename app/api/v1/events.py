@@ -22,6 +22,21 @@ from app.services.aws import upload_file_to_s3
 
 router = APIRouter()
 
+
+def _send_event_fcm(event: Event) -> None:
+    """Broadcast FCM notification for an Event to all JamiaGive users."""
+    title = f"Upcoming Event: {event.title}"
+    body = f"{event.venue_name} on {event.event_date}. Tap for details."
+    data = {
+        "type": "event",
+        "event_id": str(event.id),
+        "title": str(event.title),
+        "event_date": str(event.event_date),
+    }
+    image_url = event.cover_image
+    firebase_service.send_topic_notification("all_users", title, body, data=data, image_url=image_url)
+    firebase_service.send_topic_notification("events", title, body, data=data, image_url=image_url)
+
 def slugify(text: str) -> str:
     s = text.lower().strip()
     s = re.sub(r'[^\w\s-]', '', s)
@@ -169,10 +184,26 @@ async def create_event(
     db.add(db_event)
     await db.commit()
     await db.refresh(db_event)
-    
+
     # Reload with relations
     res = await db.execute(select(Event).options(selectinload(Event.gallery_images)).filter(Event.id == db_event.id))
-    return res.scalars().first()
+    db_event = res.scalars().first()
+
+    # Auto-broadcast to JamiaGive users on creation
+    if db_event and db_event.published:
+        _send_event_fcm(db_event)
+        log = NotificationLog(
+            title=f"Upcoming Event: {db_event.title}",
+            body=f"{db_event.venue_name} on {db_event.event_date}",
+            image_url=db_event.cover_image,
+            notification_type="event",
+            related_event_id=db_event.id,
+            recipient_count=1,
+        )
+        db.add(log)
+        await db.commit()
+
+    return db_event
 
 @router.get("/{event_id}", response_model=EventResponse)
 async def get_event(event_id: int, db: AsyncSession = Depends(get_db)):
@@ -265,21 +296,21 @@ async def notify_event(
     current_user: User = Depends(get_current_admin_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """
-    Send push notification for an upcoming event to all users.
-    """
+    """Manually broadcast a push notification for an event to all JamiaGive users."""
     result = await db.execute(select(Event).filter(Event.id == event_id))
     event = result.scalars().first()
     if not event:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
 
-    # Record notification log
+    _send_event_fcm(event)
+
     log = NotificationLog(
         title=f"Upcoming Event: {event.title}",
         body=f"{event.venue_name} on {event.event_date}",
         image_url=event.cover_image,
+        notification_type="event",
         related_event_id=event.id,
-        recipient_count=1
+        recipient_count=1,
     )
     db.add(log)
     await db.commit()

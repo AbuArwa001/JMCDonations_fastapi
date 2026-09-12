@@ -4,16 +4,25 @@ from app.core.config import settings
 from app.api.v1 import api_router
 
 from contextlib import asynccontextmanager
+import asyncio
 from app.db.session import engine
 from app.models.__init__ import *
 from app.db.base import Base
+from app.workers.pending_cleanup import pending_cleanup_loop
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Automatically create missing database tables on startup
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    # Start background worker: expire pending transactions > 1 hr
+    cleanup_task = asyncio.create_task(pending_cleanup_loop())
     yield
+    cleanup_task.cancel()
+    try:
+        await cleanup_task
+    except asyncio.CancelledError:
+        pass
 
 app = FastAPI(
     title=settings.PROJECT_NAME,

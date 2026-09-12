@@ -12,6 +12,7 @@ from app.db.session import get_db
 from app.models.transactions import Transaction, BankAccount, Transfer
 from app.models.donations import Donation
 from app.models.users import User
+from app.models.khutba import NotificationLog
 from app.schemas.transactions import (
     TransactionCreate, TransactionUpdate, TransactionResponse,
     BankAccountCreate, BankAccountUpdate, BankAccountResponse,
@@ -30,6 +31,25 @@ import logging
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def _notify_admin_donation_completed(tx: Transaction, donation: Donation | None = None) -> None:
+    """Send FCM to admins topic when a donation payment completes."""
+    drive_title = donation.title if donation else "a donation drive"
+    donor = tx.account_name or tx.account_number or "A donor"
+    title = "💰 New Donation Received"
+    body = f"{donor} donated KES {tx.amount:,.0f} to '{drive_title}'."
+    data = {
+        "type": "admin_donation",
+        "transaction_id": str(tx.id),
+        "amount": str(tx.amount),
+        "donation_id": str(tx.donation_id) if tx.donation_id else "",
+    }
+    try:
+        firebase_service.send_topic_notification("admins", title, body, data=data)
+        logger.info(f"Admin FCM sent for completed transaction {tx.id}")
+    except Exception as e:
+        logger.error(f"Failed to send admin FCM for tx {tx.id}: {e}")
 
 # ==================== Transactions ====================
 
@@ -339,6 +359,19 @@ async def check_status(reference: str, db: AsyncSession = Depends(get_db)):
                 await db.commit()
                 await db.refresh(tx)
                 logger.info(f"Transaction {tx.id} resolved to Completed via Daraja STK Query")
+                # Notify admin
+                don_res = await db.execute(select(Donation).filter(Donation.id == tx.donation_id))
+                donation_obj = don_res.scalars().first()
+                _notify_admin_donation_completed(tx, donation_obj)
+                log = NotificationLog(
+                    title="💰 New Donation Received",
+                    body=f"KES {tx.amount:,.0f} donated to '{donation_obj.title if donation_obj else 'a drive'}'.",
+                    notification_type="admin_donation",
+                    related_donation_id=str(tx.donation_id) if tx.donation_id else None,
+                    recipient_count=1,
+                )
+                db.add(log)
+                await db.commit()
             elif res_code in ("1032", "1037", "2001", "1"):
                 tx.payment_status = "Failed"
                 await db.commit()
@@ -496,6 +529,19 @@ async def paypal_callback(
             tx.mpesa_receipt = cap_id
         except (KeyError, IndexError):
             tx.mpesa_receipt = capture_token
+        await db.commit()
+        # Notify admin of completed PayPal donation
+        don_res = await db.execute(select(Donation).filter(Donation.id == tx.donation_id))
+        donation_obj = don_res.scalars().first()
+        _notify_admin_donation_completed(tx, donation_obj)
+        log = NotificationLog(
+            title="💰 New Donation Received (PayPal)",
+            body=f"KES {tx.amount:,.0f} donated to '{donation_obj.title if donation_obj else 'a drive'}' via PayPal.",
+            notification_type="admin_donation",
+            related_donation_id=str(tx.donation_id) if tx.donation_id else None,
+            recipient_count=1,
+        )
+        db.add(log)
         await db.commit()
         return RedirectResponse(
             url=f"jamiagive://payment/success?tx_id={tx.id}",
@@ -844,19 +890,36 @@ async def mpesa_callback(request: Request, db: AsyncSession = Depends(get_db)):
                 tx.payment_status = "Failed"
                 logger.info(f"Transaction {tx.id} marked as Failed. Reason: {result_desc}")
             await db.commit()
-            
-            # Send Push Notification
-            if tx.user_id:
+
+            # Notify user of successful donation (only on completion)
+            if str(result_code) == "0" and tx.user_id:
                 user_res = await db.execute(select(User).filter(User.id == tx.user_id))
                 user_obj = user_res.scalars().first()
                 if user_obj and user_obj.fcm_token:
-                    title = "Transaction Successful" if str(result_code) == "0" else "Transaction Failed"
-                    body = f"Your donation of KES {tx.amount} was {'successful' if str(result_code) == '0' else 'unsuccessful'}."
                     try:
-                        firebase_service.send_notification(title, body, user_obj.fcm_token)
-                        logger.info(f"FCM Notification sent to {user_obj.email} for Transaction {tx.id}")
+                        firebase_service.send_notification(
+                            "Donation Successful 🎉",
+                            f"Your donation of KES {tx.amount:,.0f} was received. JazakAllahu Khayran!",
+                            user_obj.fcm_token
+                        )
+                        logger.info(f"FCM sent to donor {user_obj.email} for tx {tx.id}")
                     except Exception as e:
-                        logger.error(f"Failed to send FCM notification for tx {tx.id}: {e}")
+                        logger.error(f"Failed to send donor FCM for tx {tx.id}: {e}")
+
+            # Notify admin of completed donation
+            if str(result_code) == "0":
+                don_res = await db.execute(select(Donation).filter(Donation.id == tx.donation_id))
+                donation_obj = don_res.scalars().first()
+                _notify_admin_donation_completed(tx, donation_obj)
+                log = NotificationLog(
+                    title="💰 New Donation Received",
+                    body=f"KES {tx.amount:,.0f} donated to '{donation_obj.title if donation_obj else 'a drive'}' via M-Pesa.",
+                    notification_type="admin_donation",
+                    related_donation_id=str(tx.donation_id) if tx.donation_id else None,
+                    recipient_count=1,
+                )
+                db.add(log)
+                await db.commit()
         else:
             logger.warning(f"Transaction not found for CheckoutRequestID={checkout_id}")
 
