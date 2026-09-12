@@ -199,7 +199,7 @@ async def initiate_stk_push(
 
     # 5. Generate local reference & create Pending Transaction in DB
     ref = f"WS_{uuid.uuid4().hex[:12].upper()}"
-    donor_account_name = payload.account_name or (current_user.full_name if current_user else donation.title)
+    donor_account_name = payload.account_name or (current_user.full_name if current_user else "Anonymous")
     db_tx = Transaction(
         donation_id=target_donation_id,
         user_id=target_user_id,
@@ -434,7 +434,7 @@ async def initiate_paypal_payment(
             detail="Donation drive not found",
         )
 
-    donor_account_name = payload.account_name or (current_user.full_name if current_user else donation.title)
+    donor_account_name = payload.account_name or (current_user.full_name if current_user else "Anonymous")
     db_tx = Transaction(
         donation_id=target_donation_id,
         user_id=current_user.id if current_user else None,
@@ -587,7 +587,7 @@ async def initiate_card_payment(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Donation drive not found")
 
     ref = f"JM-{uuid.uuid4()}"
-    donor_account_name = current_user.full_name if current_user else donation.title
+    donor_account_name = current_user.full_name if current_user else "Anonymous"
     db_tx = Transaction(
         donation_id=target_donation_id,
         user_id=current_user.id if current_user else None,
