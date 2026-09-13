@@ -102,6 +102,62 @@ async def create_khutba(
     return db_khutba
 
 
+# ==================== Device Tokens ====================
+
+@router.post("/register-device", response_model=DeviceTokenResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/register-device/", response_model=DeviceTokenResponse, status_code=status.HTTP_201_CREATED)
+async def register_device_token(token_in: DeviceTokenCreate, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(DeviceToken).filter(DeviceToken.fcm_token == token_in.fcm_token))
+    existing = result.scalars().first()
+    now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
+    if existing:
+        existing.last_seen_at = now_utc
+        existing.platform = token_in.platform
+        await db.commit()
+        await db.refresh(existing)
+        return existing
+
+    device = DeviceToken(
+        fcm_token=token_in.fcm_token,
+        platform=token_in.platform,
+        registered_at=now_utc,
+        last_seen_at=now_utc
+    )
+    db.add(device)
+    await db.commit()
+    await db.refresh(device)
+    return device
+
+
+# ==================== Notification Logs ====================
+
+@router.get("/logs", response_model=List[NotificationLogResponse])
+async def list_notification_logs(
+    limit: int = 50,
+    current_user: User = Depends(get_current_admin_user),
+    db: AsyncSession = Depends(get_db)
+):
+    result = await db.execute(
+        select(NotificationLog).order_by(NotificationLog.sent_at.desc()).limit(limit)
+    )
+    return result.scalars().all()
+
+
+@router.get("/admin-notifications", response_model=List[NotificationLogResponse])
+async def list_admin_notifications(
+    limit: int = 30,
+    current_user: User = Depends(get_current_admin_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Returns admin-facing notification logs (donations completed, new drives, etc.)."""
+    result = await db.execute(
+        select(NotificationLog)
+        .order_by(NotificationLog.sent_at.desc())
+        .limit(limit)
+    )
+    return result.scalars().all()
+
+
 @router.get("/{khutba_id}", response_model=JumaKhutbaResponse)
 async def get_khutba(khutba_id: int, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(JumaKhutba).filter(JumaKhutba.id == khutba_id))
@@ -193,57 +249,3 @@ async def notify_khutba(
     return {"status": "success", "message": "Notification broadcast initiated", "khutba_id": khutba_id}
 
 
-# ==================== Device Tokens ====================
-
-@router.post("/register-device", response_model=DeviceTokenResponse, status_code=status.HTTP_201_CREATED)
-@router.post("/register-device/", response_model=DeviceTokenResponse, status_code=status.HTTP_201_CREATED)
-async def register_device_token(token_in: DeviceTokenCreate, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(DeviceToken).filter(DeviceToken.fcm_token == token_in.fcm_token))
-    existing = result.scalars().first()
-    now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
-    if existing:
-        existing.last_seen_at = now_utc
-        existing.platform = token_in.platform
-        await db.commit()
-        await db.refresh(existing)
-        return existing
-
-    device = DeviceToken(
-        fcm_token=token_in.fcm_token,
-        platform=token_in.platform,
-        registered_at=now_utc,
-        last_seen_at=now_utc
-    )
-    db.add(device)
-    await db.commit()
-    await db.refresh(device)
-    return device
-
-
-# ==================== Notification Logs ====================
-
-@router.get("/logs", response_model=List[NotificationLogResponse])
-async def list_notification_logs(
-    limit: int = 50,
-    current_user: User = Depends(get_current_admin_user),
-    db: AsyncSession = Depends(get_db)
-):
-    result = await db.execute(
-        select(NotificationLog).order_by(NotificationLog.sent_at.desc()).limit(limit)
-    )
-    return result.scalars().all()
-
-
-@router.get("/admin-notifications", response_model=List[NotificationLogResponse])
-async def list_admin_notifications(
-    limit: int = 30,
-    current_user: User = Depends(get_current_admin_user),
-    db: AsyncSession = Depends(get_db)
-):
-    """Returns admin-facing notification logs (donations completed, new drives, etc.)."""
-    result = await db.execute(
-        select(NotificationLog)
-        .order_by(NotificationLog.sent_at.desc())
-        .limit(limit)
-    )
-    return result.scalars().all()
