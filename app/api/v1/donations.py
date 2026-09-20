@@ -28,6 +28,7 @@ from app.api.dependencies.auth import (
     get_current_admin_user,
 )
 from app.services.firebase import firebase_service
+from app.workers.auto_close import auto_close_expired_donations
 
 router = APIRouter()
 
@@ -61,8 +62,18 @@ async def build_donation_response(db: AsyncSession, donation: Donation) -> Donat
 
     # 3. Remaining days & expired check
     now = datetime.now(timezone.utc).replace(tzinfo=None)
-    remaining_days = (donation.end_date.date() - now.date()).days if donation.end_date else 0
-    is_expired = remaining_days < 0
+    is_past_due = donation.end_date is not None and donation.end_date < now
+    raw_remaining = (donation.end_date.date() - now.date()).days if donation.end_date else 0
+    remaining_days = max(0, raw_remaining)
+    is_expired = is_past_due or raw_remaining < 0
+
+    # Auto-close if past due and currently marked Active
+    if is_expired and donation.status == "Active":
+        donation.status = "Closed"
+        try:
+            await db.commit()
+        except Exception:
+            await db.rollback()
 
     # 4. Resolve category name
     cat_name = None
@@ -71,6 +82,7 @@ async def build_donation_response(db: AsyncSession, donation: Donation) -> Donat
         cat_name = cat_res.scalar()
 
     resp = DonationResponse.model_validate(donation)
+    resp.status = donation.status
     resp.collected_amount = collected
     resp.donor_count = donors
     resp.average_rating = avg_rating
@@ -100,6 +112,9 @@ async def list_donations(
     """
     List donation drives with filtering, search, ordering, and pagination.
     """
+    # Auto-close any past-due drives in DB prior to querying
+    await auto_close_expired_donations(db)
+
     if page and page > 0:
         skip = (page - 1) * limit
 

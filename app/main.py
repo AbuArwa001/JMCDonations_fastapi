@@ -9,19 +9,22 @@ from app.db.session import engine
 from app.models.__init__ import *
 from app.db.base import Base
 from app.workers.pending_cleanup import pending_cleanup_loop
+from app.workers.auto_close import expired_donations_loop
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Automatically create missing database tables on startup
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    # Start background worker: expire pending transactions > 1 hr
+    # Start background workers: expire pending transactions > 1 hr, auto-close past-due donations
     cleanup_task = asyncio.create_task(pending_cleanup_loop())
+    auto_close_task = asyncio.create_task(expired_donations_loop())
     yield
     cleanup_task.cancel()
+    auto_close_task.cancel()
     try:
-        await cleanup_task
-    except asyncio.CancelledError:
+        await asyncio.gather(cleanup_task, auto_close_task, return_exceptions=True)
+    except Exception:
         pass
 
 app = FastAPI(

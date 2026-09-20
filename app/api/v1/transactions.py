@@ -100,11 +100,22 @@ async def create_transaction(
     """
     Record a new transaction.
     """
-    # Verify donation exists
+    # Verify donation exists and is active
     d_res = await db.execute(select(Donation).filter(Donation.id == transaction_in.donation_id, Donation.is_deleted == False))
     donation = d_res.scalars().first()
     if not donation:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Donation drive not found")
+
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    is_past_due = donation.end_date is not None and donation.end_date < now
+    if donation.status != "Active" or is_past_due:
+        if donation.status == "Active" and is_past_due:
+            donation.status = "Closed"
+            await db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This donation drive is closed and no longer accepting contributions."
+        )
 
     ref = f"TX-{uuid.uuid4().hex[:10].upper()}"
     db_tx = Transaction(
@@ -157,7 +168,7 @@ async def initiate_stk_push(
             detail=f"Invalid donation UUID: {raw_id}"
         )
 
-    # 2. Verify donation exists
+    # 2. Verify donation exists and is active
     d_res = await db.execute(
         select(Donation).filter(Donation.id == target_donation_id, Donation.is_deleted == False)
     )
@@ -166,6 +177,17 @@ async def initiate_stk_push(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Donation drive not found"
+        )
+
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    is_past_due = donation.end_date is not None and donation.end_date < now
+    if donation.status != "Active" or is_past_due:
+        if donation.status == "Active" and is_past_due:
+            donation.status = "Closed"
+            await db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This donation drive is closed and no longer accepting contributions."
         )
 
     # 3. Format and sanitize phone number (must be 2547XXXXXXXX or 2541XXXXXXXX)
