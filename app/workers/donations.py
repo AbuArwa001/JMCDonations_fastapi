@@ -1,7 +1,6 @@
 from app.core.celery_app import celery_app
-from app.db.session import SessionLocal
-from datetime import datetime
-from app.models.donations import Donation
+from app.db.session import AsyncSessionLocal
+from app.workers.auto_close import auto_close_expired_donations
 
 @celery_app.task
 def close_expired_donations():
@@ -9,10 +8,9 @@ def close_expired_donations():
     import asyncio
     
     async def _run():
-        async with SessionLocal() as db:
-            now = datetime.utcnow()
-            print(f"Closing expired donations as of {now}")
-            # Stub implementation
+        async with AsyncSessionLocal() as db:
+            closed_count = await auto_close_expired_donations(db)
+            print(f"Closed {closed_count} expired donations")
+            return closed_count
             
-    asyncio.run(_run())
-    return "Donations checked"
+    return asyncio.run(_run())
