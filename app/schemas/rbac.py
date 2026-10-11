@@ -46,6 +46,7 @@ class RoleResponse(RoleBase):
 class RoleSummary(BaseModel):
     id: uuid.UUID
     role_name: str
+    description: Optional[str] = None
     color: Optional[str] = None
     is_system: bool = False
     model_config = ConfigDict(from_attributes=True)
