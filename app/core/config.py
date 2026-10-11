@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     ALLOWED_HOSTS: str = "*"
     CORS_ALLOWED_ORIGIN: str = "*"
+    ADMIN_DASHBOARD_URL: str = "http://localhost:3000"
     
     # Database
     DATABASE_URL: str = "sqlite+aiosqlite:///./db.sqlite3"

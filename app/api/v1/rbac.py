@@ -8,15 +8,17 @@ import secrets
 import logging
 from datetime import datetime, timezone
 from typing import List, Optional, Dict
+from urllib.parse import urlparse, parse_qs
 
 import firebase_admin
 from firebase_admin import auth as fb_auth
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.db.session import get_db
 from app.models.users import User, Role
 from app.core.permissions import (
@@ -155,6 +157,46 @@ def _guard_role_assignment(actor_perms: set[str], role: Optional[Role]) -> None:
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You cannot assign a role with more privileges than your own",
         )
+
+
+def _format_custom_reset_link(
+    raw_link: Optional[str],
+    email: str,
+    request: Optional[Request] = None,
+) -> Optional[str]:
+    """
+    Transforms Firebase default action URL:
+      https://<project>.firebaseapp.com/__/auth/action?mode=resetPassword&oobCode=...
+    Into our luxury, white-labeled dashboard reset URL:
+      https://admin.jamiamosque.co.ke/reset-password?oobCode=...&email=...
+    """
+    if not raw_link:
+        return raw_link
+    try:
+        parsed = urlparse(raw_link)
+        qs = parse_qs(parsed.query)
+        oob_code = qs.get("oobCode", [""])[0]
+        if not oob_code:
+            return raw_link
+
+        base_url = None
+        if request:
+            origin = request.headers.get("origin")
+            if not origin:
+                referer = request.headers.get("referer")
+                if referer:
+                    ref_p = urlparse(referer)
+                    origin = f"{ref_p.scheme}://{ref_p.netloc}"
+            if origin:
+                base_url = origin.rstrip("/")
+
+        if not base_url:
+            base_url = getattr(settings, "ADMIN_DASHBOARD_URL", "http://localhost:3000").rstrip("/")
+
+        return f"{base_url}/reset-password?oobCode={oob_code}&email={email}"
+    except Exception as e:
+        logger.warning(f"Error formatting custom reset link: {e}")
+        return raw_link
 
 
 # ==================== Current user access ====================
