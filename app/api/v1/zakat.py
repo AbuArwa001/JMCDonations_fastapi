@@ -10,7 +10,7 @@ from app.db.session import get_db
 from app.models.zakat import NisabRate
 from app.models.users import User
 from app.schemas.zakat import NisabRateCreate, NisabRateUpdate, NisabRateResponse
-from app.api.dependencies.auth import get_current_admin_user
+from app.api.dependencies.auth import require_permission, get_current_admin_user
 
 router = APIRouter()
 
@@ -55,7 +55,7 @@ async def get_nisab_rate(db: AsyncSession = Depends(get_db)):
 @router.post("/nisab-rate", response_model=NisabRateResponse, status_code=status.HTTP_201_CREATED)
 async def create_nisab_rate(
     rate_in: NisabRateCreate,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("zakat.manage")),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -75,7 +75,7 @@ async def create_nisab_rate(
 async def update_nisab_rate(
     rate_id: uuid.UUID,
     rate_in: NisabRateUpdate,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("zakat.manage")),
     db: AsyncSession = Depends(get_db)
 ):
     result = await db.execute(select(NisabRate).filter(NisabRate.id == rate_id))

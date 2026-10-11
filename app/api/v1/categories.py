@@ -8,7 +8,7 @@ from app.db.session import get_db
 from app.models.categories import Category
 from app.models.users import User
 from app.schemas.content import CategoryCreate, CategoryUpdate, CategoryResponse
-from app.api.dependencies.auth import get_current_admin_user
+from app.api.dependencies.auth import require_permission, get_current_admin_user
 
 router = APIRouter()
 
@@ -23,7 +23,7 @@ async def list_categories(db: AsyncSession = Depends(get_db)):
 @router.post("/", response_model=CategoryResponse, status_code=status.HTTP_201_CREATED)
 async def create_category(
     category_in: CategoryCreate,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("categories.manage")),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -51,7 +51,7 @@ async def get_category(category_id: uuid.UUID, db: AsyncSession = Depends(get_db
 async def update_category(
     category_id: uuid.UUID,
     category_in: CategoryUpdate,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("categories.manage")),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -73,7 +73,7 @@ async def update_category(
 @router.delete("/{category_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_category(
     category_id: uuid.UUID,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("categories.manage")),
     db: AsyncSession = Depends(get_db)
 ):
     """

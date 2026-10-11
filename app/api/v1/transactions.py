@@ -19,6 +19,7 @@ from app.schemas.transactions import (
     TransferCreate, TransferResponse
 )
 from app.api.dependencies.auth import (
+    require_permission,
     get_current_active_user,
     get_current_admin_user,
     get_optional_current_user
@@ -729,7 +730,7 @@ async def get_transaction(transaction_id: uuid.UUID, db: AsyncSession = Depends(
 async def update_transaction_status(
     transaction_id: uuid.UUID,
     tx_in: TransactionUpdate,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("donations.manage")),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -756,7 +757,7 @@ async def update_transaction_status(
 @router.get("/bank-accounts", response_model=List[BankAccountResponse])
 async def list_bank_accounts(
     active_only: bool = True,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("accounts.view", "accounts.manage", "transfers.manage")),
     db: AsyncSession = Depends(get_db)
 ):
     query = select(BankAccount)
@@ -768,7 +769,7 @@ async def list_bank_accounts(
 @router.post("/bank-accounts", response_model=BankAccountResponse, status_code=status.HTTP_201_CREATED)
 async def create_bank_account(
     acc_in: BankAccountCreate,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("accounts.manage")),
     db: AsyncSession = Depends(get_db)
 ):
     db_acc = BankAccount(**acc_in.model_dump())
@@ -780,7 +781,7 @@ async def create_bank_account(
 @router.get("/bank-accounts/{account_id}", response_model=BankAccountResponse)
 async def get_bank_account(
     account_id: uuid.UUID,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("accounts.view", "accounts.manage")),
     db: AsyncSession = Depends(get_db)
 ):
     result = await db.execute(select(BankAccount).filter(BankAccount.id == account_id))
@@ -794,7 +795,7 @@ async def get_bank_account(
 async def update_bank_account(
     account_id: uuid.UUID,
     acc_in: BankAccountUpdate,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("accounts.manage")),
     db: AsyncSession = Depends(get_db)
 ):
     result = await db.execute(select(BankAccount).filter(BankAccount.id == account_id))
@@ -814,7 +815,7 @@ async def update_bank_account(
 @router.delete("/bank-accounts/{account_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_bank_account(
     account_id: uuid.UUID,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("accounts.manage")),
     db: AsyncSession = Depends(get_db)
 ):
     result = await db.execute(select(BankAccount).filter(BankAccount.id == account_id))
@@ -829,7 +830,7 @@ async def delete_bank_account(
 
 @router.get("/transfers", response_model=List[TransferResponse])
 async def list_transfers(
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("transfers.view", "transfers.manage")),
     db: AsyncSession = Depends(get_db)
 ):
     result = await db.execute(select(Transfer).order_by(Transfer.created_at.desc()))
@@ -838,7 +839,7 @@ async def list_transfers(
 @router.post("/transfers", response_model=TransferResponse, status_code=status.HTTP_201_CREATED)
 async def create_transfer(
     transfer_in: TransferCreate,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("transfers.manage")),
     db: AsyncSession = Depends(get_db)
 ):
     acc_res = await db.execute(select(BankAccount).filter(BankAccount.id == transfer_in.destination_account_id))

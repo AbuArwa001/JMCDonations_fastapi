@@ -17,13 +17,13 @@ from app.schemas.analytics import (
     DashboardSummaryResponse, CategoryBreakdownResponse,
     DriveProgressResponse, PendingCashResponse, DonationTrendItem
 )
-from app.api.dependencies.auth import get_current_admin_user
+from app.api.dependencies.auth import require_permission, get_current_admin_user
 
 router = APIRouter()
 
 @router.get("/summary", response_model=DashboardSummaryResponse)
 async def get_dashboard_summary(
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("dashboard.view")),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -92,7 +92,7 @@ async def get_dashboard_summary(
 
 @router.get("/categories", response_model=List[CategoryBreakdownResponse])
 async def get_category_breakdown(
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("dashboard.view")),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -124,7 +124,7 @@ async def get_category_breakdown(
 @router.get("/donations/{donation_id}/progress", response_model=DriveProgressResponse)
 async def get_drive_progress(
     donation_id: uuid.UUID,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("dashboard.view", "drives.view")),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -159,7 +159,7 @@ async def get_drive_progress(
 
 @router.get("/cash/pending", response_model=List[PendingCashResponse])
 async def get_pending_cash_transactions(
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("donations.view")),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -187,7 +187,7 @@ async def get_pending_cash_transactions(
 @router.get("/trends", response_model=List[DonationTrendItem])
 async def get_donation_trends(
     period: str = Query("week", pattern="^(week|month|year)$"),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("dashboard.view")),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -245,7 +245,7 @@ async def get_donation_trends(
 @router.get("/export")
 async def export_transactions_csv(
     drive_id: Optional[uuid.UUID] = None,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("donations.view")),
     db: AsyncSession = Depends(get_db)
 ):
     """

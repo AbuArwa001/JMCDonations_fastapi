@@ -12,7 +12,7 @@ from app.schemas.users import (
     UserResponse, UserUpdate,
     UserPaymentAccountCreate, UserPaymentAccountUpdate, UserPaymentAccountResponse
 )
-from app.api.dependencies.auth import get_current_active_user, get_current_admin_user
+from app.api.dependencies.auth import require_permission, get_current_active_user, get_current_admin_user
 from app.services.user_service import get_user_response
 
 router = APIRouter()
@@ -217,7 +217,7 @@ async def read_users(
     skip: int = 0,
     limit: int = 100,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user)
+    current_user: User = Depends(require_permission("users.manage"))
 ):
     """
     List all users (Admin only).
@@ -250,7 +250,7 @@ async def read_user(
 async def delete_user(
     user_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user)
+    current_user: User = Depends(require_permission("users.manage"))
 ):
     """
     Delete a user account (Admin only).

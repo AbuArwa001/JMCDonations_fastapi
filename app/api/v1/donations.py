@@ -24,6 +24,7 @@ from app.schemas.donations import (
 )
 from app.schemas.transactions import TransactionResponse
 from app.api.dependencies.auth import (
+    require_permission,
     get_current_active_user,
     get_current_admin_user,
 )
@@ -190,7 +191,7 @@ async def list_donations(
 @router.post("/", response_model=DonationResponse, status_code=status.HTTP_201_CREATED)
 async def create_donation(
     donation_in: DonationCreate,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("drives.manage")),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -322,7 +323,7 @@ async def get_donation(
 async def update_donation(
     donation_id: uuid.UUID,
     donation_in: DonationUpdate,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("drives.manage")),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -354,7 +355,7 @@ async def upload_donation_images(
     donation_id: uuid.UUID,
     files: Optional[List[UploadFile]] = File(None),
     uploaded_images: Optional[List[UploadFile]] = File(None),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("drives.manage")),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -409,7 +410,7 @@ async def upload_donation_images(
 async def delete_donation_image(
     donation_id: uuid.UUID,
     image_url: str = Query(..., description="URL or path of image to delete from donation gallery"),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("drives.manage")),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -456,7 +457,7 @@ async def delete_donation_image(
 async def delete_donation(
     donation_id: uuid.UUID,
     permanent: bool = Query(False, description="Set True for permanent deletion; False for soft delete"),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("drives.manage")),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -496,7 +497,7 @@ async def delete_donation(
 @router.delete("/{donation_id}/permanent", status_code=status.HTTP_200_OK)
 async def permanent_delete_donation(
     donation_id: uuid.UUID,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("drives.manage")),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -519,7 +520,7 @@ async def permanent_delete_donation(
 @router.post("/{donation_id}/restore", response_model=DonationResponse)
 async def restore_donation(
     donation_id: uuid.UUID,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("drives.manage")),
     db: AsyncSession = Depends(get_db)
 ):
     """

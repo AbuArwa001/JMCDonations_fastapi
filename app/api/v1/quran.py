@@ -10,7 +10,7 @@ from app.schemas.content import (
     ReciterCreate, ReciterUpdate, ReciterResponse,
     SurahAudioCreate, SurahAudioUpdate, SurahAudioResponse
 )
-from app.api.dependencies.auth import get_current_admin_user
+from app.api.dependencies.auth import require_permission, get_current_admin_user
 
 router = APIRouter()
 
@@ -24,7 +24,7 @@ async def list_reciters(db: AsyncSession = Depends(get_db)):
 @router.post("/reciters", response_model=ReciterResponse, status_code=status.HTTP_201_CREATED)
 async def create_reciter(
     reciter_in: ReciterCreate,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("quran.manage")),
     db: AsyncSession = Depends(get_db)
 ):
     db_reciter = Reciter(**reciter_in.model_dump())
@@ -46,7 +46,7 @@ async def get_reciter(reciter_id: int, db: AsyncSession = Depends(get_db)):
 async def update_reciter(
     reciter_id: int,
     reciter_in: ReciterUpdate,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("quran.manage")),
     db: AsyncSession = Depends(get_db)
 ):
     result = await db.execute(select(Reciter).filter(Reciter.id == reciter_id))
@@ -65,7 +65,7 @@ async def update_reciter(
 @router.delete("/reciters/{reciter_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_reciter(
     reciter_id: int,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("quran.manage")),
     db: AsyncSession = Depends(get_db)
 ):
     result = await db.execute(select(Reciter).filter(Reciter.id == reciter_id))
@@ -96,7 +96,7 @@ async def list_surah_audio(
 @router.post("/audio", response_model=SurahAudioResponse, status_code=status.HTTP_201_CREATED)
 async def create_surah_audio(
     audio_in: SurahAudioCreate,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("quran.manage")),
     db: AsyncSession = Depends(get_db)
 ):
     db_audio = SurahAudio(**audio_in.model_dump())
@@ -108,7 +108,7 @@ async def create_surah_audio(
 @router.delete("/audio/{audio_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_surah_audio(
     audio_id: int,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("quran.manage")),
     db: AsyncSession = Depends(get_db)
 ):
     result = await db.execute(select(SurahAudio).filter(SurahAudio.id == audio_id))

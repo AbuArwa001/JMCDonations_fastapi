@@ -14,7 +14,7 @@ from app.schemas.khutba import (
     DeviceTokenCreate, DeviceTokenResponse,
     NotificationLogResponse
 )
-from app.api.dependencies.auth import get_current_admin_user
+from app.api.dependencies.auth import require_permission, get_current_admin_user
 from app.services.firebase import firebase_service
 from app.services.aws import upload_file_to_s3
 
@@ -60,7 +60,7 @@ async def create_khutba(
     topic_summary: Optional[str] = Form(None),
     published: bool = Form(True),
     imam_photo: Optional[UploadFile] = File(None),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("khutba.manage")),
     db: AsyncSession = Depends(get_db)
 ):
     imam_photo_url = None
@@ -178,7 +178,7 @@ async def update_khutba(
     topic_summary: Optional[str] = Form(None),
     published: Optional[bool] = Form(None),
     imam_photo: Optional[UploadFile] = File(None),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("khutba.manage")),
     db: AsyncSession = Depends(get_db)
 ):
     result = await db.execute(select(JumaKhutba).filter(JumaKhutba.id == khutba_id))
@@ -209,7 +209,7 @@ async def update_khutba(
 @router.delete("/{khutba_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_khutba(
     khutba_id: int,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("khutba.manage")),
     db: AsyncSession = Depends(get_db)
 ):
     result = await db.execute(select(JumaKhutba).filter(JumaKhutba.id == khutba_id))
@@ -224,7 +224,7 @@ async def delete_khutba(
 @router.post("/{khutba_id}/notify")
 async def notify_khutba(
     khutba_id: int,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("khutba.manage")),
     db: AsyncSession = Depends(get_db)
 ):
     """Manually broadcast a push notification for a Khutba to all JamiaGive users."""

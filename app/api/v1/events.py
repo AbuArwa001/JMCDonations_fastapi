@@ -16,7 +16,7 @@ from app.schemas.content import (
     EventCategoryCreate, EventCategoryUpdate, EventCategoryResponse,
     EventImageCreate, EventImageResponse
 )
-from app.api.dependencies.auth import get_current_admin_user
+from app.api.dependencies.auth import require_permission, get_current_admin_user
 from app.services.firebase import firebase_service
 from app.services.aws import upload_file_to_s3
 
@@ -52,7 +52,7 @@ async def list_event_categories(db: AsyncSession = Depends(get_db)):
 @router.post("/categories", response_model=EventCategoryResponse, status_code=status.HTTP_201_CREATED)
 async def create_event_category(
     cat_in: EventCategoryCreate,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("events.manage")),
     db: AsyncSession = Depends(get_db)
 ):
     base_slug = cat_in.slug or slugify(cat_in.name)
@@ -84,7 +84,7 @@ async def get_event_category(category_id: int, db: AsyncSession = Depends(get_db
 async def update_event_category(
     category_id: int,
     cat_in: EventCategoryUpdate,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("events.manage")),
     db: AsyncSession = Depends(get_db)
 ):
     result = await db.execute(select(EventCategory).filter(EventCategory.id == category_id))
@@ -103,7 +103,7 @@ async def update_event_category(
 @router.delete("/categories/{category_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_event_category(
     category_id: int,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("events.manage")),
     db: AsyncSession = Depends(get_db)
 ):
     result = await db.execute(select(EventCategory).filter(EventCategory.id == category_id))
@@ -146,7 +146,7 @@ async def create_event(
     published: bool = Form(True),
     cover_image: Optional[UploadFile] = File(None),
     guest_photo: Optional[UploadFile] = File(None),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("events.manage")),
     db: AsyncSession = Depends(get_db)
 ):
     cover_image_url = None
@@ -232,7 +232,7 @@ async def update_event(
     published: Optional[bool] = Form(None),
     cover_image: Optional[UploadFile] = File(None),
     guest_photo: Optional[UploadFile] = File(None),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("events.manage")),
     db: AsyncSession = Depends(get_db)
 ):
     result = await db.execute(
@@ -279,7 +279,7 @@ async def update_event(
 @router.delete("/{event_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_event(
     event_id: int,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("events.manage")),
     db: AsyncSession = Depends(get_db)
 ):
     result = await db.execute(select(Event).filter(Event.id == event_id))
@@ -293,7 +293,7 @@ async def delete_event(
 @router.post("/{event_id}/notify")
 async def notify_event(
     event_id: int,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("events.manage")),
     db: AsyncSession = Depends(get_db)
 ):
     """Manually broadcast a push notification for an event to all JamiaGive users."""
@@ -322,7 +322,7 @@ async def notify_event(
 @router.post("/images", response_model=EventImageResponse, status_code=status.HTTP_201_CREATED)
 async def add_event_image(
     image_in: EventImageCreate,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("events.manage")),
     db: AsyncSession = Depends(get_db)
 ):
     db_img = EventImage(**image_in.model_dump())
@@ -334,7 +334,7 @@ async def add_event_image(
 @router.delete("/images/{image_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_event_image(
     image_id: int,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("events.manage")),
     db: AsyncSession = Depends(get_db)
 ):
     res = await db.execute(select(EventImage).filter(EventImage.id == image_id))

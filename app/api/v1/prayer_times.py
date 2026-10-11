@@ -13,7 +13,7 @@ from app.schemas.content import (
     PrayerCalculationSettingsResponse, PrayerCalculationSettingsUpdate,
     DailyPrayerTimesResponse
 )
-from app.api.dependencies.auth import get_current_admin_user
+from app.api.dependencies.auth import require_permission, get_current_admin_user
 
 router = APIRouter()
 
@@ -31,7 +31,7 @@ async def list_cities(active_only: bool = True, db: AsyncSession = Depends(get_d
 @router.post("/cities", response_model=CityResponse, status_code=status.HTTP_201_CREATED)
 async def create_city(
     city_in: CityCreate,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("prayer_times.manage")),
     db: AsyncSession = Depends(get_db)
 ):
     db_city = City(**city_in.model_dump())
@@ -53,7 +53,7 @@ async def get_city(city_id: int, db: AsyncSession = Depends(get_db)):
 async def update_city(
     city_id: int,
     city_in: CityUpdate,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("prayer_times.manage")),
     db: AsyncSession = Depends(get_db)
 ):
     result = await db.execute(select(City).filter(City.id == city_id))
@@ -72,7 +72,7 @@ async def update_city(
 @router.delete("/cities/{city_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_city(
     city_id: int,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("prayer_times.manage")),
     db: AsyncSession = Depends(get_db)
 ):
     result = await db.execute(select(City).filter(City.id == city_id))
@@ -97,7 +97,7 @@ async def list_overrides(city_id: Optional[int] = None, db: AsyncSession = Depen
 @router.post("/overrides", response_model=PrayerTimeOverrideResponse, status_code=status.HTTP_201_CREATED)
 async def create_override(
     override_in: PrayerTimeOverrideCreate,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("prayer_times.manage")),
     db: AsyncSession = Depends(get_db)
 ):
     db_override = PrayerTimeOverride(**override_in.model_dump())
@@ -109,7 +109,7 @@ async def create_override(
 @router.delete("/overrides/{override_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_override(
     override_id: int,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("prayer_times.manage")),
     db: AsyncSession = Depends(get_db)
 ):
     result = await db.execute(select(PrayerTimeOverride).filter(PrayerTimeOverride.id == override_id))
@@ -136,7 +136,7 @@ async def get_settings(db: AsyncSession = Depends(get_db)):
 @router.put("/settings", response_model=PrayerCalculationSettingsResponse)
 async def update_settings(
     settings_in: PrayerCalculationSettingsUpdate,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("prayer_times.manage")),
     db: AsyncSession = Depends(get_db)
 ):
     result = await db.execute(select(PrayerCalculationSettings).order_by(PrayerCalculationSettings.id.desc()))

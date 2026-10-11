@@ -9,7 +9,7 @@ from sqlalchemy import select
 from app.db.session import get_db
 from app.models.bulletins import FridayBulletin
 from app.schemas.bulletins import BulletinResponse
-from app.api.dependencies.auth import get_current_admin_user
+from app.api.dependencies.auth import require_permission, get_current_admin_user
 from app.services.aws import upload_file_to_s3, delete_file_from_s3
 from app.core.config import settings
 
@@ -53,7 +53,7 @@ async def create_bulletin(
     cover_image: Optional[UploadFile] = File(None),
     is_active: bool = Form(True),
     send_notification: bool = Form(True),
-    current_user = Depends(get_current_admin_user),
+    current_user = Depends(require_permission("bulletins.manage")),
     db: AsyncSession = Depends(get_db)
 ):
     if not pdf_file.filename.endswith(".pdf"):
@@ -132,7 +132,7 @@ async def create_bulletin(
 @router.post("/{bulletin_id}/notify")
 async def notify_bulletin(
     bulletin_id: int,
-    current_user = Depends(get_current_admin_user),
+    current_user = Depends(require_permission("bulletins.manage")),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -192,7 +192,7 @@ def _extract_s3_key(url: str) -> Optional[str]:
 @router.delete("/{bulletin_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_bulletin(
     bulletin_id: int,
-    current_user = Depends(get_current_admin_user),
+    current_user = Depends(require_permission("bulletins.manage")),
     db: AsyncSession = Depends(get_db)
 ):
     result = await db.execute(select(FridayBulletin).filter(FridayBulletin.id == bulletin_id))

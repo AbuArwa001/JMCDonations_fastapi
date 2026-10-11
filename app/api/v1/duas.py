@@ -11,7 +11,7 @@ from app.schemas.content import (
     DuaCreate, DuaUpdate, DuaResponse,
     DuaCategoryCreate, DuaCategoryUpdate, DuaCategoryResponse
 )
-from app.api.dependencies.auth import get_current_admin_user
+from app.api.dependencies.auth import require_permission, get_current_admin_user
 
 router = APIRouter()
 
@@ -30,7 +30,7 @@ async def list_dua_categories(db: AsyncSession = Depends(get_db)):
 @router.post("/categories", response_model=DuaCategoryResponse, status_code=status.HTTP_201_CREATED)
 async def create_dua_category(
     cat_in: DuaCategoryCreate,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("duas.manage")),
     db: AsyncSession = Depends(get_db)
 ):
     base_slug = cat_in.slug or slugify(cat_in.name)
@@ -67,7 +67,7 @@ async def get_dua_category(category_id: int, db: AsyncSession = Depends(get_db))
 async def update_dua_category(
     category_id: int,
     cat_in: DuaCategoryUpdate,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("duas.manage")),
     db: AsyncSession = Depends(get_db)
 ):
     result = await db.execute(select(DuaCategory).filter(DuaCategory.id == category_id))
@@ -86,7 +86,7 @@ async def update_dua_category(
 @router.delete("/categories/{category_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_dua_category(
     category_id: int,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("duas.manage")),
     db: AsyncSession = Depends(get_db)
 ):
     result = await db.execute(select(DuaCategory).filter(DuaCategory.id == category_id))
@@ -117,7 +117,7 @@ async def list_duas(
 @router.post("/", response_model=DuaResponse, status_code=status.HTTP_201_CREATED)
 async def create_dua(
     dua_in: DuaCreate,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("duas.manage")),
     db: AsyncSession = Depends(get_db)
 ):
     db_dua = Dua(**dua_in.model_dump())
@@ -139,7 +139,7 @@ async def get_dua(dua_id: int, db: AsyncSession = Depends(get_db)):
 async def update_dua(
     dua_id: int,
     dua_in: DuaUpdate,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("duas.manage")),
     db: AsyncSession = Depends(get_db)
 ):
     result = await db.execute(select(Dua).filter(Dua.id == dua_id))
@@ -158,7 +158,7 @@ async def update_dua(
 @router.delete("/{dua_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_dua(
     dua_id: int,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_permission("duas.manage")),
     db: AsyncSession = Depends(get_db)
 ):
     result = await db.execute(select(Dua).filter(Dua.id == dua_id))
