@@ -387,6 +387,7 @@ class StaffInviteResponse(BaseModel):
 
 @router.post("/users", response_model=StaffInviteResponse, status_code=status.HTTP_201_CREATED)
 async def create_staff_user(
+    request: Request,
     user_in: StaffUserCreate,
     current_user: User = Depends(require_permission("users.manage")),
     db: AsyncSession = Depends(get_db),
@@ -412,7 +413,8 @@ async def create_staff_user(
             fb_uid = rec.uid
             firebase_synced = True
             if fb_created and not user_in.password:
-                reset_link = await run_in_threadpool(fb_auth.generate_password_reset_link, email)
+                raw_link = await run_in_threadpool(fb_auth.generate_password_reset_link, email)
+                reset_link = _format_custom_reset_link(raw_link, email, request)
         except Exception as e:
             logger.error(f"Firebase user provisioning failed for {email}: {e}")
             raise HTTPException(status_code=502, detail=f"Could not provision Firebase account: {e}")
@@ -514,6 +516,7 @@ async def update_staff_user(
 @router.post("/users/{user_id}/password-reset")
 async def staff_password_reset_link(
     user_id: uuid.UUID,
+    request: Request,
     current_user: User = Depends(require_permission("users.manage")),
     db: AsyncSession = Depends(get_db),
 ):
@@ -524,10 +527,15 @@ async def staff_password_reset_link(
     if not _firebase_ready():
         raise HTTPException(status_code=503, detail="Firebase is not configured on the server")
     try:
-        link = await run_in_threadpool(fb_auth.generate_password_reset_link, user.email)
+        raw_link = await run_in_threadpool(fb_auth.generate_password_reset_link, user.email)
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Could not generate reset link: {e}")
-    return {"email": user.email, "password_reset_link": link}
+    custom_link = _format_custom_reset_link(raw_link, user.email, request)
+    return {
+        "email": user.email,
+        "password_reset_link": custom_link or raw_link,
+        "raw_firebase_link": raw_link,
+    }
 
 
 @router.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
