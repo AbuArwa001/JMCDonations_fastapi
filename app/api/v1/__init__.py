@@ -2,7 +2,7 @@ from fastapi import APIRouter
 from app.api.v1 import (
     auth, users, donations, transactions, community, zakat,
     categories, duas, quran, prayer_times, events,
-    khutba, ratings, core_config, analytics, bulletins
+    khutba, ratings, core_config, analytics, bulletins, rbac
 )
 
 api_router = APIRouter()
@@ -24,6 +24,7 @@ api_router.include_router(core_config.router, prefix="/features", tags=["core_co
 api_router.include_router(core_config.router, prefix="/core_config/features", tags=["core_config"])
 api_router.include_router(analytics.router, prefix="/analytics", tags=["analytics"])
 api_router.include_router(bulletins.router, prefix="/bulletins", tags=["bulletins"])
+api_router.include_router(rbac.router, prefix="/rbac", tags=["rbac"])
 
 # Direct M-Pesa callback endpoints to ensure no 404/307 regardless of path or trailing slash
 api_router.add_api_route("/mpesa/callback", transactions.mpesa_callback, methods=["POST"], tags=["transactions"])

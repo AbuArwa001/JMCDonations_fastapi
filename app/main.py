@@ -16,6 +16,15 @@ async def lifespan(app: FastAPI):
     # Automatically create missing database tables on startup
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    # Seed built-in RBAC roles (Super Admin, Finance Manager, ...) idempotently
+    try:
+        from app.db.session import AsyncSessionLocal
+        from app.api.v1.rbac import ensure_default_roles
+        async with AsyncSessionLocal() as session:
+            await ensure_default_roles(session)
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).error(f"RBAC role seeding skipped (run `alembic upgrade head`?): {e}")
     # Start background workers: expire pending transactions > 1 hr, auto-close past-due donations
     cleanup_task = asyncio.create_task(pending_cleanup_loop())
     auto_close_task = asyncio.create_task(expired_donations_loop())
