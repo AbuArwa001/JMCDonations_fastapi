@@ -10,6 +10,13 @@ class Role(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     role_name: Mapped[str] = mapped_column(String(50), unique=True)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # List of permission keys (see app/core/permissions.py). "*" = all permissions.
+    permissions: Mapped[list] = mapped_column(JSON, default=list)
+    color: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    is_system: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, default=datetime.utcnow)
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     users: Mapped[List["User"]] = relationship("User", back_populates="role")
 
