@@ -120,6 +120,15 @@ class FirebaseService:
                 user.firebase_uid = uid
             if is_firebase_admin and not user.is_admin:
                 user.is_admin = True
+            elif user.is_admin and not is_firebase_admin:
+                try:
+                    record = auth.get_user(uid)
+                    claims = dict(record.custom_claims or {})
+                    claims["admin"] = True
+                    auth.set_custom_user_claims(uid, claims)
+                    logger.info(f"Synced admin claim to Firebase for elevated staff user {user.email}")
+                except Exception as ex:
+                    logger.warning(f"Could not sync admin claim to Firebase for {email}: {ex}")
             if full_name and not user.full_name:
                 user.full_name = full_name
             if picture and not user.profile_image_url:

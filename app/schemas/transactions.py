@@ -27,7 +27,9 @@ class TransactionResponse(TransactionBase):
     mpesa_receipt: Optional[str] = None
     donated_at: datetime
     completed_at: Optional[datetime] = None
-    
+    # Resolved donor name: user.full_name preferred over account_name
+    user_name: Optional[str] = None
+
     model_config = ConfigDict(from_attributes=True)
 
 class BankAccountBase(BaseModel):

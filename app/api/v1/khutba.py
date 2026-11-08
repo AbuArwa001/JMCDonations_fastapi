@@ -1,5 +1,6 @@
 from typing import List, Optional
 from datetime import date, time
+import re
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, status, Form, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -131,6 +132,27 @@ async def register_device_token(token_in: DeviceTokenCreate, db: AsyncSession = 
 
 # ==================== Notification Logs ====================
 
+MIN_ADMIN_DONATION_NOTIFICATION_AMOUNT = 10000
+
+
+def _is_allowed_notification(log: NotificationLog) -> bool:
+    """Filter out admin donation notifications for amounts below 10,000."""
+    if log.notification_type == "admin_donation":
+        match = re.search(
+            r'(?:KES|KSh|USD|\$)?\s*([\d,]+(?:\.\d+)?)\s+donated|donated\s+(?:KES|KSh|USD|\$)?\s*([\d,]+(?:\.\d+)?)',
+            log.body or "",
+            re.IGNORECASE,
+        )
+        if match:
+            raw = (match.group(1) or match.group(2) or "").replace(",", "")
+            try:
+                amt = float(raw)
+                return amt >= MIN_ADMIN_DONATION_NOTIFICATION_AMOUNT
+            except ValueError:
+                pass
+    return True
+
+
 @router.get("/logs", response_model=List[NotificationLogResponse])
 async def list_notification_logs(
     limit: int = 50,
@@ -140,7 +162,8 @@ async def list_notification_logs(
     result = await db.execute(
         select(NotificationLog).order_by(NotificationLog.sent_at.desc()).limit(limit)
     )
-    return result.scalars().all()
+    logs = result.scalars().all()
+    return [log for log in logs if _is_allowed_notification(log)]
 
 
 @router.get("/admin-notifications", response_model=List[NotificationLogResponse])
@@ -155,7 +178,8 @@ async def list_admin_notifications(
         .order_by(NotificationLog.sent_at.desc())
         .limit(limit)
     )
-    return result.scalars().all()
+    logs = result.scalars().all()
+    return [log for log in logs if _is_allowed_notification(log)]
 
 
 @router.get("/{khutba_id}", response_model=JumaKhutbaResponse)

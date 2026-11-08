@@ -6,6 +6,7 @@ from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_
+from sqlalchemy.orm import selectinload
 
 from app.core.config import settings
 from app.db.session import get_db
@@ -34,10 +35,22 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-def _notify_admin_donation_completed(tx: Transaction, donation: Donation | None = None) -> None:
-    """Send FCM to admins topic when a donation payment completes."""
+MIN_ADMIN_DONATION_NOTIFICATION_AMOUNT = 10000
+
+
+def _notify_admin_donation_completed(tx: Transaction, donation: Donation | None = None, user: User | None = None) -> None:
+    """Send FCM to admins topic when a donation payment completes (10,000 KES and above)."""
+    if (tx.amount or 0) < MIN_ADMIN_DONATION_NOTIFICATION_AMOUNT:
+        return
+
     drive_title = donation.title if donation else "a donation drive"
-    donor = tx.account_name or tx.account_number or "A donor"
+    # Prefer linked user's full name; fallback to account_name only if it differs from drive title
+    if user and user.full_name:
+        donor = user.full_name
+    elif tx.account_name and tx.account_name != drive_title and tx.account_name.lower() != "donation":
+        donor = tx.account_name
+    else:
+        donor = tx.account_number or "A donor"
     title = "💰 New Donation Received"
     body = f"{donor} donated KES {tx.amount:,.0f} to '{drive_title}'."
     data = {
@@ -69,8 +82,11 @@ async def list_transactions(
     """
     List transactions with optional filtering. Regular users only see their own transactions.
     """
-    query = select(Transaction)
-    
+    query = select(Transaction).options(
+        selectinload(Transaction.user),
+        selectinload(Transaction.donation),
+    )
+
     if current_user and not current_user.is_admin:
         # Non-admin users only view their own transactions or transactions made with their phone
         phone_cond = []
@@ -91,7 +107,27 @@ async def list_transactions(
 
     query = query.order_by(Transaction.donated_at.desc()).offset(skip).limit(limit)
     result = await db.execute(query)
-    return result.scalars().all()
+    transactions = result.scalars().all()
+
+    # Build response dicts with resolved user_name:
+    # Prefer user.full_name over account_name (which may have been set to the donation title)
+    output = []
+    for tx in transactions:
+        donor_name = None
+        if tx.user and tx.user.full_name:
+            donor_name = tx.user.full_name
+        elif tx.account_name:
+            # Only use account_name if it doesn't look like a donation title
+            # (i.e., it differs from the linked donation's title)
+            donation_title = tx.donation.title if tx.donation else None
+            if tx.account_name != donation_title and tx.account_name.lower() != "donation":
+                donor_name = tx.account_name
+
+        resp = TransactionResponse.model_validate(tx)
+        resp.user_name = donor_name
+        output.append(resp)
+
+    return output
 
 @router.post("/", response_model=TransactionResponse, status_code=status.HTTP_201_CREATED)
 async def create_transaction(
@@ -224,7 +260,19 @@ async def initiate_stk_push(
 
     # 5. Generate local reference & create Pending Transaction in DB
     ref = f"WS_{uuid.uuid4().hex[:12].upper()}"
-    donor_account_name = payload.account_name or (current_user.full_name if current_user else "Anonymous")
+    # Prefer the linked user's real full_name. Only fall back to payload.account_name
+    # if it looks like a real name (not "Donation" and not matching the drive title).
+    raw_payload_name = payload.account_name or ""
+    if current_user and current_user.full_name:
+        donor_account_name = current_user.full_name
+    elif (
+        raw_payload_name
+        and raw_payload_name.lower() != "donation"
+        and raw_payload_name != donation.title
+    ):
+        donor_account_name = raw_payload_name
+    else:
+        donor_account_name = "Anonymous"
     db_tx = Transaction(
         donation_id=target_donation_id,
         user_id=target_user_id,
@@ -384,19 +432,20 @@ async def check_status(reference: str, db: AsyncSession = Depends(get_db)):
                 await db.commit()
                 await db.refresh(tx)
                 logger.info(f"Transaction {tx.id} resolved to Completed via Daraja STK Query")
-                # Notify admin
-                don_res = await db.execute(select(Donation).filter(Donation.id == tx.donation_id))
-                donation_obj = don_res.scalars().first()
-                _notify_admin_donation_completed(tx, donation_obj)
-                log = NotificationLog(
-                    title="💰 New Donation Received",
-                    body=f"KES {tx.amount:,.0f} donated to '{donation_obj.title if donation_obj else 'a drive'}'.",
-                    notification_type="admin_donation",
-                    related_donation_id=str(tx.donation_id) if tx.donation_id else None,
-                    recipient_count=1,
-                )
-                db.add(log)
-                await db.commit()
+                # Notify admin (only if donation is 10,000 and above)
+                if (tx.amount or 0) >= MIN_ADMIN_DONATION_NOTIFICATION_AMOUNT:
+                    don_res = await db.execute(select(Donation).filter(Donation.id == tx.donation_id))
+                    donation_obj = don_res.scalars().first()
+                    _notify_admin_donation_completed(tx, donation_obj)
+                    log = NotificationLog(
+                        title="💰 New Donation Received",
+                        body=f"KES {tx.amount:,.0f} donated to '{donation_obj.title if donation_obj else 'a drive'}'.",
+                        notification_type="admin_donation",
+                        related_donation_id=str(tx.donation_id) if tx.donation_id else None,
+                        recipient_count=1,
+                    )
+                    db.add(log)
+                    await db.commit()
             elif res_code in ("1032", "1037", "2001", "1"):
                 tx.payment_status = "Failed"
                 await db.commit()
@@ -459,7 +508,17 @@ async def initiate_paypal_payment(
             detail="Donation drive not found",
         )
 
-    donor_account_name = payload.account_name or (current_user.full_name if current_user else "Anonymous")
+    raw_paypal_name = payload.account_name or ""
+    if current_user and current_user.full_name:
+        donor_account_name = current_user.full_name
+    elif (
+        raw_paypal_name
+        and raw_paypal_name.lower() != "donation"
+        and raw_paypal_name != donation.title
+    ):
+        donor_account_name = raw_paypal_name
+    else:
+        donor_account_name = "Anonymous"
     db_tx = Transaction(
         donation_id=target_donation_id,
         user_id=current_user.id if current_user else None,
@@ -555,19 +614,20 @@ async def paypal_callback(
         except (KeyError, IndexError):
             tx.mpesa_receipt = capture_token
         await db.commit()
-        # Notify admin of completed PayPal donation
-        don_res = await db.execute(select(Donation).filter(Donation.id == tx.donation_id))
-        donation_obj = don_res.scalars().first()
-        _notify_admin_donation_completed(tx, donation_obj)
-        log = NotificationLog(
-            title="💰 New Donation Received (PayPal)",
-            body=f"KES {tx.amount:,.0f} donated to '{donation_obj.title if donation_obj else 'a drive'}' via PayPal.",
-            notification_type="admin_donation",
-            related_donation_id=str(tx.donation_id) if tx.donation_id else None,
-            recipient_count=1,
-        )
-        db.add(log)
-        await db.commit()
+        # Notify admin of completed PayPal donation (only if donation is 10,000 and above)
+        if (tx.amount or 0) >= MIN_ADMIN_DONATION_NOTIFICATION_AMOUNT:
+            don_res = await db.execute(select(Donation).filter(Donation.id == tx.donation_id))
+            donation_obj = don_res.scalars().first()
+            _notify_admin_donation_completed(tx, donation_obj)
+            log = NotificationLog(
+                title="💰 New Donation Received (PayPal)",
+                body=f"KES {tx.amount:,.0f} donated to '{donation_obj.title if donation_obj else 'a drive'}' via PayPal.",
+                notification_type="admin_donation",
+                related_donation_id=str(tx.donation_id) if tx.donation_id else None,
+                recipient_count=1,
+            )
+            db.add(log)
+            await db.commit()
         return RedirectResponse(
             url=f"jamiagive://payment/success?tx_id={tx.id}",
             status_code=status.HTTP_302_FOUND,
@@ -931,8 +991,8 @@ async def mpesa_callback(request: Request, db: AsyncSession = Depends(get_db)):
                     except Exception as e:
                         logger.error(f"Failed to send donor FCM for tx {tx.id}: {e}")
 
-            # Notify admin of completed donation
-            if str(result_code) == "0":
+            # Notify admin of completed donation (only if donation is 10,000 and above)
+            if str(result_code) == "0" and (tx.amount or 0) >= MIN_ADMIN_DONATION_NOTIFICATION_AMOUNT:
                 don_res = await db.execute(select(Donation).filter(Donation.id == tx.donation_id))
                 donation_obj = don_res.scalars().first()
                 _notify_admin_donation_completed(tx, donation_obj)
