@@ -118,6 +118,13 @@ class FirebaseService:
             # Sync existing user details
             if not user.firebase_uid:
                 user.firebase_uid = uid
+            if email and user.email != email:
+                email_check = await db.execute(
+                    select(User).filter(User.email == email, User.id != user.id)
+                )
+                if not email_check.scalars().first():
+                    logger.info(f"Syncing updated email from Firebase for user {user.id}: {user.email} -> {email}")
+                    user.email = email
             if is_firebase_admin and not user.is_admin:
                 user.is_admin = True
             elif user.is_admin and not is_firebase_admin:

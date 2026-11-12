@@ -69,8 +69,29 @@ async def update_user_me(
             body = await request.json()
             user_update = UserUpdate.model_validate(body)
             update_data = user_update.model_dump(exclude_unset=True)
+            if "email" in update_data and update_data["email"]:
+                new_email = str(update_data["email"]).strip().lower()
+                if new_email != current_user.email:
+                    email_check = await db.execute(
+                        select(User).filter(User.email == new_email, User.id != current_user.id)
+                    )
+                    if email_check.scalars().first():
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="Email is already registered to another account"
+                        )
+                    current_user.email = new_email
+                    if current_user.firebase_uid:
+                        try:
+                            from firebase_admin import auth as fb_auth
+                            fb_auth.update_user(current_user.firebase_uid, email=new_email)
+                        except Exception as fb_err:
+                            pass
             for field, value in update_data.items():
-                setattr(current_user, field, value)
+                if field != "email":
+                    setattr(current_user, field, value)
+        except HTTPException:
+            raise
         except Exception:
             pass
         
