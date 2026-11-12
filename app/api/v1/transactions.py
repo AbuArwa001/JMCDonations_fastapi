@@ -778,15 +778,33 @@ async def verify_flutterwave_payment(
 
 
 @router.get("/{transaction_id}", response_model=TransactionResponse)
+@router.get("/{transaction_id}/", response_model=TransactionResponse, include_in_schema=False)
 async def get_transaction(transaction_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Transaction).filter(Transaction.id == transaction_id))
+    result = await db.execute(
+        select(Transaction)
+        .options(selectinload(Transaction.user), selectinload(Transaction.donation))
+        .filter(Transaction.id == transaction_id)
+    )
     tx = result.scalars().first()
     if not tx:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transaction not found")
-    return tx
+    
+    donor_name = None
+    if tx.user and tx.user.full_name:
+        donor_name = tx.user.full_name
+    elif tx.account_name:
+        donation_title = tx.donation.title if tx.donation else None
+        if tx.account_name != donation_title and tx.account_name.lower() != "donation":
+            donor_name = tx.account_name
+
+    resp = TransactionResponse.model_validate(tx)
+    resp.user_name = donor_name
+    return resp
 
 @router.patch("/{transaction_id}", response_model=TransactionResponse)
+@router.patch("/{transaction_id}/", response_model=TransactionResponse, include_in_schema=False)
 @router.put("/{transaction_id}", response_model=TransactionResponse)
+@router.put("/{transaction_id}/", response_model=TransactionResponse, include_in_schema=False)
 async def update_transaction_status(
     transaction_id: uuid.UUID,
     tx_in: TransactionUpdate,
@@ -794,23 +812,78 @@ async def update_transaction_status(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Update transaction status (Admin only).
+    Update / manage transaction details (Admin with donations.manage or Super Admin).
+    """
+    result = await db.execute(
+        select(Transaction)
+        .options(selectinload(Transaction.user), selectinload(Transaction.donation))
+        .filter(Transaction.id == transaction_id)
+    )
+    tx = result.scalars().first()
+    if not tx:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transaction not found")
+
+    update_data = tx_in.model_dump(exclude_unset=True)
+
+    # Validate target donation if donation_id is changed
+    if "donation_id" in update_data and update_data["donation_id"] is not None:
+        target_donation_id = update_data["donation_id"]
+        d_res = await db.execute(
+            select(Donation).filter(Donation.id == target_donation_id, Donation.is_deleted == False)
+        )
+        if not d_res.scalars().first():
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target donation drive not found")
+
+    for field, value in update_data.items():
+        setattr(tx, field, value)
+
+    if tx.payment_status == "Completed" and not tx.completed_at:
+        tx.completed_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    elif tx.payment_status in ("Pending", "Failed") and "completed_at" not in update_data:
+        tx.completed_at = None
+
+    await db.commit()
+    await db.refresh(tx)
+
+    # Re-fetch with relationships loaded
+    result = await db.execute(
+        select(Transaction)
+        .options(selectinload(Transaction.user), selectinload(Transaction.donation))
+        .filter(Transaction.id == transaction_id)
+    )
+    tx = result.scalars().first()
+
+    donor_name = None
+    if tx.user and tx.user.full_name:
+        donor_name = tx.user.full_name
+    elif tx.account_name:
+        donation_title = tx.donation.title if tx.donation else None
+        if tx.account_name != donation_title and tx.account_name.lower() != "donation":
+            donor_name = tx.account_name
+
+    resp = TransactionResponse.model_validate(tx)
+    resp.user_name = donor_name
+    return resp
+
+@router.delete("/{transaction_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{transaction_id}/", status_code=status.HTTP_204_NO_CONTENT, include_in_schema=False)
+async def delete_transaction(
+    transaction_id: uuid.UUID,
+    current_user: User = Depends(require_permission("donations.delete")),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Permanently delete a transaction (Super Admin or authorized role with donations.delete).
     """
     result = await db.execute(select(Transaction).filter(Transaction.id == transaction_id))
     tx = result.scalars().first()
     if not tx:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transaction not found")
 
-    update_data = tx_in.model_dump(exclude_unset=True)
-    for field, value in update_data.items():
-        setattr(tx, field, value)
-
-    if tx.payment_status == "Completed" and not tx.completed_at:
-        tx.completed_at = datetime.now(timezone.utc).replace(tzinfo=None)
-
+    await db.delete(tx)
     await db.commit()
-    await db.refresh(tx)
-    return tx
+    logger.info(f"Transaction {transaction_id} deleted permanently by admin {current_user.email} (ID: {current_user.id})")
+    return None
 
 # ==================== Bank Accounts ====================
 

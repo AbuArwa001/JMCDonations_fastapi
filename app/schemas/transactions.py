@@ -14,8 +14,16 @@ class TransactionCreate(TransactionBase):
     pass
 
 class TransactionUpdate(BaseModel):
+    amount: Optional[float] = None
     payment_status: Optional[str] = None
+    payment_method: Optional[str] = None
+    account_name: Optional[str] = None
+    account_number: Optional[str] = None
+    transaction_reference: Optional[str] = None
     mpesa_receipt: Optional[str] = None
+    donation_id: Optional[uuid.UUID] = None
+    user_id: Optional[uuid.UUID] = None
+    donated_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
 
 class TransactionResponse(TransactionBase):
