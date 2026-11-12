@@ -1,5 +1,5 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field
+from pydantic import Field, AliasChoices
 from typing import List
 
 class Settings(BaseSettings):
@@ -23,7 +23,10 @@ class Settings(BaseSettings):
     # M-Pesa
     MPESA_CONSUMER_KEY: str = ""
     MPESA_CONSUMER_SECRET: str = ""
-    MPESA_API_URL: str = "https://sandbox.safaricom.co.ke"
+    MPESA_API_URL: str = Field(
+        default="https://sandbox.safaricom.co.ke",
+        validation_alias=AliasChoices("MPESA_API_URL", "MPESA_BASE_URL"),
+    )
     MPESA_PASSKEY: str = ""
     MPESA_SHORTCODE: str = ""
     MPESA_CALLBACK_URL: str = "https://donations-api.jamiamosque.co.ke/api/v1/mpesa/callback/"

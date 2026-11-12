@@ -307,9 +307,16 @@ async def initiate_stk_push(
         shortcode = settings.MPESA_SHORTCODE
 
     # 6. Trigger M-Pesa STK Push
-    raw_account_ref = donation.account_number or donation.account_name or donor_account_name or "JamiaWaqf"
-    account_ref = "".join(c for c in raw_account_ref if c.isalnum())[:12] or "JamiaWaqf"
-    trans_desc = f"Donation {donation.title[:15]}"[:30]
+    # Prioritize the campaign's configured Paybill Account (e.g. "EDU", "ABLUTION-EXP")
+    raw_account_ref = (
+        (donation.account_name.strip() if donation.account_name and donation.account_name.strip() else None)
+        or (donation.account_number.strip() if donation.account_number and donation.account_number.strip() else None)
+        or (payload.account_name.strip() if payload.account_name and payload.account_name.strip().lower() != "donation" and payload.account_name.strip() != donation.title else None)
+        or (donor_account_name if donor_account_name and donor_account_name != "Anonymous" and donor_account_name != donation.title else None)
+        or "JamiaWaqf"
+    )
+    account_ref = "".join(c for c in raw_account_ref if c.isalnum() or c in "-_")[:12].strip() or "JamiaWaqf"
+    trans_desc = f"Donation {account_ref}"[:30]
 
     try:
         mpesa_res = await mpesa_service.initiate_stk_push(
