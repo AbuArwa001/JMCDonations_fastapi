@@ -17,7 +17,8 @@ from app.models.khutba import NotificationLog
 from app.schemas.transactions import (
     TransactionCreate, TransactionUpdate, TransactionResponse,
     BankAccountCreate, BankAccountUpdate, BankAccountResponse,
-    TransferCreate, TransferResponse
+    TransferCreate, TransferResponse,
+    BulkDeleteTransactionsRequest, BulkDeleteTransactionsResponse
 )
 from app.api.dependencies.auth import (
     require_permission,
@@ -782,6 +783,50 @@ async def verify_flutterwave_payment(
         "transaction_id": str(tx.id),
         "status": tx.payment_status,
     }
+
+
+@router.post("/bulk-delete", response_model=BulkDeleteTransactionsResponse)
+@router.post("/bulk-delete/", response_model=BulkDeleteTransactionsResponse, include_in_schema=False)
+@router.delete("/bulk", response_model=BulkDeleteTransactionsResponse)
+@router.delete("/bulk/", response_model=BulkDeleteTransactionsResponse, include_in_schema=False)
+async def bulk_delete_transactions(
+    payload: BulkDeleteTransactionsRequest,
+    current_user: User = Depends(require_permission("donations.delete")),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Permanently delete multiple transactions at once (Super Admin or role holding donations.delete).
+    """
+    if not payload.transaction_ids:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No transaction IDs provided"
+        )
+
+    # Fetch matching transactions
+    query = select(Transaction).filter(Transaction.id.in_(payload.transaction_ids))
+    result = await db.execute(query)
+    transactions = result.scalars().all()
+
+    if not transactions:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No matching transactions found to delete"
+        )
+
+    deleted_count = len(transactions)
+    for tx in transactions:
+        await db.delete(tx)
+
+    await db.commit()
+    logger.info(
+        f"Bulk deleted {deleted_count} transactions by admin {current_user.email} (ID: {current_user.id})"
+    )
+
+    return BulkDeleteTransactionsResponse(
+        deleted_count=deleted_count,
+        message=f"Successfully deleted {deleted_count} transaction{'s' if deleted_count != 1 else ''}"
+    )
 
 
 @router.get("/{transaction_id}", response_model=TransactionResponse)

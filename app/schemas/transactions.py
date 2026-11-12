@@ -1,7 +1,14 @@
 import uuid
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List
 from pydantic import BaseModel, ConfigDict
+
+class BulkDeleteTransactionsRequest(BaseModel):
+    transaction_ids: List[uuid.UUID]
+
+class BulkDeleteTransactionsResponse(BaseModel):
+    deleted_count: int
+    message: str
 
 class TransactionBase(BaseModel):
     donation_id: uuid.UUID
