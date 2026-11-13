@@ -35,6 +35,9 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+# In-memory store for recent STK Push result descriptions/codes (e.g. cancellation, insufficient funds)
+_stk_results: dict[str, dict] = {}
+
 
 MIN_ADMIN_DONATION_NOTIFICATION_AMOUNT = 10000
 
@@ -434,6 +437,7 @@ async def check_status(reference: str, db: AsyncSession = Depends(get_db)):
                 consumer_secret=consumer_secret,
             )
             res_code = str(stk_res.get("ResultCode", ""))
+            res_desc = str(stk_res.get("ResultDesc", ""))
             if res_code == "0":
                 tx.payment_status = "Completed"
                 tx.completed_at = datetime.now(timezone.utc).replace(tzinfo=None)
@@ -454,19 +458,42 @@ async def check_status(reference: str, db: AsyncSession = Depends(get_db)):
                     )
                     db.add(log)
                     await db.commit()
-            elif res_code in ("1032", "1037", "2001", "1"):
-                tx.payment_status = "Failed"
+            elif res_code == "1032":
+                tx.payment_status = "Cancelled"
+                _stk_results[tx.transaction_reference] = {
+                    "result_code": res_code,
+                    "result_desc": res_desc or "Request cancelled by user."
+                }
                 await db.commit()
                 await db.refresh(tx)
-                logger.info(f"Transaction {tx.id} resolved to Failed via Daraja STK Query (code {res_code})")
+                logger.info(f"Transaction {tx.id} resolved to Cancelled via Daraja STK Query")
+            elif res_code in ("1037", "2001", "1"):
+                tx.payment_status = "Failed"
+                _stk_results[tx.transaction_reference] = {
+                    "result_code": res_code,
+                    "result_desc": res_desc
+                }
+                await db.commit()
+                await db.refresh(tx)
+                logger.info(f"Transaction {tx.id} resolved to Failed via Daraja STK Query (code {res_code}: {res_desc})")
         except Exception as e:
             logger.warning(f"Error querying Daraja STK Query for {tx.transaction_reference}: {e}")
+
+    stk_info = _stk_results.get(tx.transaction_reference or "") or _stk_results.get(str(tx.id)) or {}
+    final_res_code = stk_info.get("result_code")
+    final_res_desc = stk_info.get("result_desc")
+
+    if tx.payment_status == "Cancelled" and not final_res_code:
+        final_res_code = "1032"
+        final_res_desc = "Request cancelled by user."
 
     return {
         "payment_status": tx.payment_status,
         "mpesa_receipt": tx.mpesa_receipt or "",
         "transaction_id": str(tx.id),
         "amount": float(tx.amount),
+        "result_code": final_res_code,
+        "result_desc": final_res_desc,
     }
 
 
@@ -1096,8 +1123,19 @@ async def mpesa_callback(request: Request, db: AsyncSession = Depends(get_db)):
                             logger.info(f"Transaction {tx.id} auto-linked to user {matched.email} ({matched.id})")
                 tx.completed_at = datetime.now(timezone.utc).replace(tzinfo=None)
                 logger.info(f"Transaction {tx.id} marked as Completed. Receipt: {receipt}")
+            elif str(result_code) == "1032":
+                tx.payment_status = "Cancelled"
+                _stk_results[checkout_id] = {
+                    "result_code": str(result_code),
+                    "result_desc": result_desc or "Request cancelled by user."
+                }
+                logger.info(f"Transaction {tx.id} marked as Cancelled by user.")
             else:
                 tx.payment_status = "Failed"
+                _stk_results[checkout_id] = {
+                    "result_code": str(result_code),
+                    "result_desc": result_desc
+                }
                 logger.info(f"Transaction {tx.id} marked as Failed. Reason: {result_desc}")
             await db.commit()
 
