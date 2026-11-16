@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, or_, and_, case
+from sqlalchemy import select, func, or_, and_, case, delete
 from sqlalchemy.orm import selectinload
 from sqlalchemy.orm.attributes import flag_modified
 
@@ -249,7 +249,8 @@ async def get_my_saved_donations(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    List all donations saved by the authenticated user.
+    List all active (non-deleted) donations saved by the authenticated user.
+    Automatically purges any stale saved references to deleted donations.
     """
     query = (
         select(SavedDonation)
@@ -261,8 +262,12 @@ async def get_my_saved_donations(
     saved_items = result.scalars().all()
 
     output = []
+    stale_ids = []
     for item in saved_items:
-        d_resp = await build_donation_response(db, item.donation) if item.donation else None
+        if not item.donation or item.donation.is_deleted:
+            stale_ids.append(item.id)
+            continue
+        d_resp = await build_donation_response(db, item.donation)
         output.append(SavedDonationResponse(
             id=item.id,
             user_id=item.user_id,
@@ -270,6 +275,15 @@ async def get_my_saved_donations(
             donation=d_resp,
             saved_at=item.saved_at
         ))
+
+    # Self-heal / purge stale bookmark entries from the database
+    if stale_ids:
+        try:
+            await db.execute(delete(SavedDonation).where(SavedDonation.id.in_(stale_ids)))
+            await db.commit()
+        except Exception:
+            await db.rollback()
+
     return output
 
 
@@ -279,10 +293,15 @@ async def get_my_saved_donation_ids(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    List UUIDs of all donations saved by current user.
+    List UUIDs of all active (non-deleted) donations saved by current user.
     """
     result = await db.execute(
-        select(SavedDonation.donation_id).filter(SavedDonation.user_id == current_user.id)
+        select(SavedDonation.donation_id)
+        .join(SavedDonation.donation)
+        .filter(
+            SavedDonation.user_id == current_user.id,
+            Donation.is_deleted == False
+        )
     )
     return [r[0] for r in result.all()]
 
@@ -483,6 +502,8 @@ async def delete_donation(
         now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
         donation.is_deleted = True
         donation.deleted_at = now_utc
+        # Remove any bookmark / saved entries for this deleted campaign
+        await db.execute(delete(SavedDonation).where(SavedDonation.donation_id == donation_id))
         await db.commit()
         return {
             "status": "success",

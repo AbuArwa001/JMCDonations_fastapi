@@ -1,7 +1,7 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, List
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_serializer
 
 class BulkDeleteTransactionsRequest(BaseModel):
     transaction_ids: List[uuid.UUID]
@@ -46,6 +46,14 @@ class TransactionResponse(TransactionBase):
     user_name: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+    @field_serializer("donated_at", "completed_at", when_used="json")
+    def serialize_datetime(self, v: Optional[datetime]) -> Optional[str]:
+        if v is None:
+            return None
+        if v.tzinfo is None:
+            v = v.replace(tzinfo=timezone.utc)
+        return v.isoformat()
 
 class BankAccountBase(BaseModel):
     bank_name: str

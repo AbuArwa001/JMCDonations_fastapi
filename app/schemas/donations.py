@@ -1,7 +1,7 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, List
-from pydantic import BaseModel, ConfigDict, computed_field
+from pydantic import BaseModel, ConfigDict, computed_field, field_serializer
 
 class DonationBase(BaseModel):
     title: str
@@ -64,6 +64,14 @@ class DonationResponse(DonationBase):
     
     model_config = ConfigDict(from_attributes=True)
 
+    @field_serializer("created_at", "updated_at", "start_date", "end_date", "deleted_at", when_used="json")
+    def serialize_datetime(self, v: Optional[datetime]) -> Optional[str]:
+        if v is None:
+            return None
+        if v.tzinfo is None:
+            v = v.replace(tzinfo=timezone.utc)
+        return v.isoformat()
+
 class SavedDonationResponse(BaseModel):
     id: uuid.UUID
     user_id: uuid.UUID
@@ -72,3 +80,11 @@ class SavedDonationResponse(BaseModel):
     saved_at: datetime
     
     model_config = ConfigDict(from_attributes=True)
+
+    @field_serializer("saved_at", when_used="json")
+    def serialize_saved_at(self, v: Optional[datetime]) -> Optional[str]:
+        if v is None:
+            return None
+        if v.tzinfo is None:
+            v = v.replace(tzinfo=timezone.utc)
+        return v.isoformat()

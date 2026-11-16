@@ -1,7 +1,7 @@
 import uuid
-from datetime import date, time, datetime
+from datetime import date, time, datetime, timezone
 from typing import Optional
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_serializer
 
 class JumaKhutbaBase(BaseModel):
     khutba_date: date
@@ -54,3 +54,11 @@ class NotificationLogResponse(BaseModel):
     sent_at: datetime
     recipient_count: int
     model_config = ConfigDict(from_attributes=True)
+
+    @field_serializer("sent_at", when_used="json")
+    def serialize_datetime(self, v: Optional[datetime]) -> Optional[str]:
+        if v is None:
+            return None
+        if v.tzinfo is None:
+            v = v.replace(tzinfo=timezone.utc)
+        return v.isoformat()
