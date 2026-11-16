@@ -2519,7 +2519,7 @@
                         },
                         "body": {
                             "mode": "raw",
-                            "raw": "{\n    \"bank_name\": \"KCB Bank\",\n    \"account_name\": \"Jamia Mosque Main Account\",\n    \"account_number\": \"1122334455\",\n    \"paybill_number\": \"522522\"\n}"
+                            "raw": "{\n    \"bank_name\": \"KCB Bank\",\n    \"account_name\": \"Jamia Mosque Main Account\",\n    \"account_number\": \"1122334455\",\n    \"paybill_number\": \"150770\"\n}"
                         }
                     },
                     "response": []
