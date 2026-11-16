@@ -71,8 +71,6 @@ def _notify_admin_donation_completed(tx: Transaction, donation: Donation | None 
 
 # ==================== Transactions ====================
 
-@router.get("/", response_model=List[TransactionResponse])
-@router.get("", response_model=List[TransactionResponse], include_in_schema=False)
 def _resolve_donor_name(tx: Transaction) -> str:
     if tx.user and tx.user.full_name and tx.user.full_name.strip():
         return tx.user.full_name.strip()
@@ -90,6 +88,8 @@ def _resolve_donor_name(tx: Transaction) -> str:
             return tx.account_name.strip()
     return "Anonymous"
 
+@router.get("/", response_model=List[TransactionResponse])
+@router.get("", response_model=List[TransactionResponse], include_in_schema=False)
 async def list_transactions(
     skip: int = 0,
     limit: int = 100,
