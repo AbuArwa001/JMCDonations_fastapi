@@ -114,21 +114,10 @@ async def list_transactions(
     transactions = result.scalars().all()
 
     # Build response dicts with resolved user_name:
-    # Prefer user.full_name over account_name (which may have been set to the donation title)
     output = []
     for tx in transactions:
-        donor_name = None
-        if tx.user and tx.user.full_name:
-            donor_name = tx.user.full_name
-        elif tx.account_name:
-            # Only use account_name if it doesn't look like a donation title
-            # (i.e., it differs from the linked donation's title)
-            donation_title = tx.donation.title if tx.donation else None
-            if tx.account_name != donation_title and tx.account_name.lower() != "donation":
-                donor_name = tx.account_name
-
         resp = TransactionResponse.model_validate(tx)
-        resp.user_name = donor_name
+        resp.user_name = _resolve_donor_name(tx)
         output.append(resp)
 
     return output
@@ -868,16 +857,8 @@ async def get_transaction(transaction_id: uuid.UUID, db: AsyncSession = Depends(
     if not tx:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transaction not found")
     
-    donor_name = None
-    if tx.user and tx.user.full_name:
-        donor_name = tx.user.full_name
-    elif tx.account_name:
-        donation_title = tx.donation.title if tx.donation else None
-        if tx.account_name != donation_title and tx.account_name.lower() != "donation":
-            donor_name = tx.account_name
-
     resp = TransactionResponse.model_validate(tx)
-    resp.user_name = donor_name
+    resp.user_name = _resolve_donor_name(tx)
     return resp
 
 @router.patch("/{transaction_id}", response_model=TransactionResponse)
@@ -932,16 +913,8 @@ async def update_transaction_status(
     )
     tx = result.scalars().first()
 
-    donor_name = None
-    if tx.user and tx.user.full_name:
-        donor_name = tx.user.full_name
-    elif tx.account_name:
-        donation_title = tx.donation.title if tx.donation else None
-        if tx.account_name != donation_title and tx.account_name.lower() != "donation":
-            donor_name = tx.account_name
-
     resp = TransactionResponse.model_validate(tx)
-    resp.user_name = donor_name
+    resp.user_name = _resolve_donor_name(tx)
     return resp
 
 @router.delete("/{transaction_id}", status_code=status.HTTP_204_NO_CONTENT)
