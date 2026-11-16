@@ -73,6 +73,23 @@ def _notify_admin_donation_completed(tx: Transaction, donation: Donation | None 
 
 @router.get("/", response_model=List[TransactionResponse])
 @router.get("", response_model=List[TransactionResponse], include_in_schema=False)
+def _resolve_donor_name(tx: Transaction) -> str:
+    if tx.user and tx.user.full_name and tx.user.full_name.strip():
+        return tx.user.full_name.strip()
+    if not tx.user_id:
+        return "Anonymous"
+    if tx.account_name:
+        donation_title = tx.donation.title if tx.donation else None
+        donation_acc = tx.donation.account_name if tx.donation else None
+        acc_lower = tx.account_name.lower().strip()
+        if (
+            tx.account_name != donation_title
+            and tx.account_name != donation_acc
+            and acc_lower not in ("donation", "general donation", "jamia mosque nairobi", "edu")
+        ):
+            return tx.account_name.strip()
+    return "Anonymous"
+
 async def list_transactions(
     skip: int = 0,
     limit: int = 100,
