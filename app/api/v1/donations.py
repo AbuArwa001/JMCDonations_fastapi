@@ -219,7 +219,7 @@ async def create_donation(
     await db.commit()
     await db.refresh(db_donation)
 
-    # Notify all JamiaGive users about the new donation drive
+    # Notify all Jamia Mosque users about the new donation drive
     notif_title = f"New Donation Drive: {db_donation.title}"
     notif_body = "A new fundraiser is now open. Tap to donate and make a difference!"
     payload = {

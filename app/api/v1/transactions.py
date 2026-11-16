@@ -641,7 +641,7 @@ async def paypal_callback(
     if cancel == "true":
         tx.payment_status = "Failed"
         await db.commit()
-        return RedirectResponse(url="jamiagive://payment/cancel", status_code=status.HTTP_302_FOUND)
+        return RedirectResponse(url="jamiamosque://payment/cancel", status_code=status.HTTP_302_FOUND)
 
     capture_token = token or tx.transaction_reference
     capture = await paypal_service.capture_order(capture_token)
@@ -670,13 +670,13 @@ async def paypal_callback(
             db.add(log)
             await db.commit()
         return RedirectResponse(
-            url=f"jamiagive://payment/success?tx_id={tx.id}",
+            url=f"jamiamosque://payment/success?tx_id={tx.id}",
             status_code=status.HTTP_302_FOUND,
         )
 
     tx.payment_status = "Failed"
     await db.commit()
-    return RedirectResponse(url="jamiagive://payment/failure", status_code=status.HTTP_302_FOUND)
+    return RedirectResponse(url="jamiamosque://payment/failure", status_code=status.HTTP_302_FOUND)
 
 
 class CardPaymentInput(BaseModel):

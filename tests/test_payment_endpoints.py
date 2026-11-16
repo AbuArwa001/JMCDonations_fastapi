@@ -145,7 +145,7 @@ async def test_paypal_payment_flow(async_client, sample_donation):
         follow_redirects=False
     )
     assert res_cancel.status_code == 302
-    assert res_cancel.headers["location"] == "jamiagive://payment/cancel"
+    assert res_cancel.headers["location"] == "jamiamosque://payment/cancel"
 
     # Test paypal_callback success with capture
     mock_capture = {
@@ -165,4 +165,4 @@ async def test_paypal_payment_flow(async_client, sample_donation):
             follow_redirects=False
         )
         assert res_success.status_code == 302
-        assert f"jamiagive://payment/success?tx_id={tx_id}" in res_success.headers["location"]
+        assert f"jamiamosque://payment/success?tx_id={tx_id}" in res_success.headers["location"]

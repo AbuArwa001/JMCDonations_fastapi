@@ -24,7 +24,7 @@ router = APIRouter()
 
 
 def _send_event_fcm(event: Event) -> None:
-    """Broadcast FCM notification for an Event to all JamiaGive users."""
+    """Broadcast FCM notification for an Event to all Jamia Mosque users."""
     title = f"Upcoming Event: {event.title}"
     body = f"{event.venue_name} on {event.event_date}. Tap for details."
     data = {
@@ -189,7 +189,7 @@ async def create_event(
     res = await db.execute(select(Event).options(selectinload(Event.gallery_images)).filter(Event.id == db_event.id))
     db_event = res.scalars().first()
 
-    # Auto-broadcast to JamiaGive users on creation
+    # Auto-broadcast to Jamia Mosque users on creation
     if db_event and db_event.published:
         _send_event_fcm(db_event)
         log = NotificationLog(
@@ -296,7 +296,7 @@ async def notify_event(
     current_user: User = Depends(require_permission("events.manage")),
     db: AsyncSession = Depends(get_db)
 ):
-    """Manually broadcast a push notification for an event to all JamiaGive users."""
+    """Manually broadcast a push notification for an event to all Jamia Mosque users."""
     result = await db.execute(select(Event).filter(Event.id == event_id))
     event = result.scalars().first()
     if not event:

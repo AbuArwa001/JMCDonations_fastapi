@@ -23,7 +23,7 @@ router = APIRouter()
 
 
 def _send_khutba_fcm(khutba: JumaKhutba) -> None:
-    """Broadcast FCM notification for a Khutba to JamiaGive users."""
+    """Broadcast FCM notification for a Khutba to Jamia Mosque users."""
     title = f"Friday Khutba: {khutba.title}"
     body = f"By {khutba.imam_name} on {khutba.khutba_date}. Tap to read the topic summary."
     data = {
@@ -86,7 +86,7 @@ async def create_khutba(
     await db.commit()
     await db.refresh(db_khutba)
 
-    # Auto-broadcast to JamiaGive users on creation
+    # Auto-broadcast to Jamia Mosque users on creation
     if db_khutba.published:
         _send_khutba_fcm(db_khutba)
         log = NotificationLog(
@@ -251,7 +251,7 @@ async def notify_khutba(
     current_user: User = Depends(require_permission("khutba.manage")),
     db: AsyncSession = Depends(get_db)
 ):
-    """Manually broadcast a push notification for a Khutba to all JamiaGive users."""
+    """Manually broadcast a push notification for a Khutba to all Jamia Mosque users."""
     result = await db.execute(select(JumaKhutba).filter(JumaKhutba.id == khutba_id))
     khutba = result.scalars().first()
     if not khutba:
