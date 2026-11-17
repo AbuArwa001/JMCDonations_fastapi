@@ -47,6 +47,17 @@ class UserPaymentAccountResponse(UserPaymentAccountBase):
     updated_at: datetime
     model_config = ConfigDict(from_attributes=True)
 
+class NotificationStateResponse(BaseModel):
+    deleted_ids: List[str] = []
+    read_ids: List[str] = []
+
+class NotificationStateUpdate(BaseModel):
+    notification_ids: List[str]
+
+class NotificationSyncRequest(BaseModel):
+    deleted_ids: List[str] = []
+    read_ids: List[str] = []
+
 class UserResponse(UserBase):
     id: uuid.UUID
     is_active: bool

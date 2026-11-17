@@ -1,4 +1,4 @@
-from app.models.users import User, Role, UserPaymentAccount
+from app.models.users import User, Role, UserPaymentAccount, UserNotificationState
 from app.models.categories import Category
 from app.models.donations import Donation, SavedDonation
 from app.models.transactions import Transaction, BankAccount, Transfer

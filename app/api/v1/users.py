@@ -1,16 +1,18 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Request, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from typing import List
+from typing import List, Optional
 from datetime import datetime, timezone
 from pathlib import Path
 import uuid
 
 from app.db.session import get_db
-from app.models.users import User, UserPaymentAccount
+from app.models.users import User, UserPaymentAccount, UserNotificationState
+from app.models.transactions import Transaction
 from app.schemas.users import (
     UserResponse, UserUpdate,
-    UserPaymentAccountCreate, UserPaymentAccountUpdate, UserPaymentAccountResponse
+    UserPaymentAccountCreate, UserPaymentAccountUpdate, UserPaymentAccountResponse,
+    NotificationStateResponse, NotificationStateUpdate, NotificationSyncRequest
 )
 from app.api.dependencies.auth import require_permission, get_current_active_user, get_current_admin_user
 from app.services.user_service import get_user_response
@@ -98,6 +100,179 @@ async def update_user_me(
     await db.commit()
     await db.refresh(current_user)
     return await get_user_response(db, current_user)
+
+# ==================== User Notifications State ====================
+
+@router.get("/me/notifications/state", response_model=NotificationStateResponse)
+async def get_my_notification_state(
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get lists of deleted and read notification IDs for current user across all devices.
+    """
+    res = await db.execute(
+        select(UserNotificationState).filter(UserNotificationState.user_id == current_user.id)
+    )
+    rows = res.scalars().all()
+    deleted_ids = [r.notification_id for r in rows if r.is_deleted]
+    read_ids = [r.notification_id for r in rows if r.is_read and not r.is_deleted]
+    return NotificationStateResponse(deleted_ids=deleted_ids, read_ids=read_ids)
+
+@router.post("/me/notifications/delete")
+async def mark_notifications_deleted(
+    payload: NotificationStateUpdate,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Mark one or more notifications as deleted for current user permanently.
+    """
+    for nid in payload.notification_ids:
+        nid_str = str(nid).strip()
+        if not nid_str:
+            continue
+        res = await db.execute(
+            select(UserNotificationState).filter(
+                UserNotificationState.user_id == current_user.id,
+                UserNotificationState.notification_id == nid_str
+            )
+        )
+        state = res.scalars().first()
+        if state:
+            state.is_deleted = True
+            state.is_read = True
+        else:
+            db.add(UserNotificationState(
+                user_id=current_user.id,
+                notification_id=nid_str,
+                is_deleted=True,
+                is_read=True
+            ))
+    await db.commit()
+    return {"status": "success", "count": len(payload.notification_ids)}
+
+@router.post("/me/notifications/read")
+async def mark_notifications_read(
+    payload: NotificationStateUpdate,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Mark one or more notifications as read for current user.
+    """
+    for nid in payload.notification_ids:
+        nid_str = str(nid).strip()
+        if not nid_str:
+            continue
+        res = await db.execute(
+            select(UserNotificationState).filter(
+                UserNotificationState.user_id == current_user.id,
+                UserNotificationState.notification_id == nid_str
+            )
+        )
+        state = res.scalars().first()
+        if state:
+            state.is_read = True
+        else:
+            db.add(UserNotificationState(
+                user_id=current_user.id,
+                notification_id=nid_str,
+                is_read=True,
+                is_deleted=False
+            ))
+    await db.commit()
+    return {"status": "success", "count": len(payload.notification_ids)}
+
+@router.post("/me/notifications/sync", response_model=NotificationStateResponse)
+async def sync_notifications_state(
+    payload: NotificationSyncRequest,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Bi-directionally sync read and deleted notifications state.
+    Merges client state into server, and returns unified state.
+    """
+    res = await db.execute(
+        select(UserNotificationState).filter(UserNotificationState.user_id == current_user.id)
+    )
+    existing = {r.notification_id: r for r in res.scalars().all()}
+
+    for nid in payload.deleted_ids:
+        nid_str = str(nid).strip()
+        if not nid_str:
+            continue
+        if nid_str in existing:
+            existing[nid_str].is_deleted = True
+            existing[nid_str].is_read = True
+        else:
+            obj = UserNotificationState(
+                user_id=current_user.id,
+                notification_id=nid_str,
+                is_deleted=True,
+                is_read=True
+            )
+            db.add(obj)
+            existing[nid_str] = obj
+
+    for nid in payload.read_ids:
+        nid_str = str(nid).strip()
+        if not nid_str:
+            continue
+        if nid_str in existing:
+            existing[nid_str].is_read = True
+        else:
+            obj = UserNotificationState(
+                user_id=current_user.id,
+                notification_id=nid_str,
+                is_read=True,
+                is_deleted=False
+            )
+            db.add(obj)
+            existing[nid_str] = obj
+
+    await db.commit()
+
+    all_deleted = [nid for nid, obj in existing.items() if obj.is_deleted]
+    all_read = [nid for nid, obj in existing.items() if obj.is_read and not obj.is_deleted]
+    return NotificationStateResponse(deleted_ids=all_deleted, read_ids=all_read)
+
+@router.post("/me/notifications/clear-all")
+@router.delete("/me/notifications/clear-all")
+async def clear_all_notifications(
+    payload: Optional[NotificationStateUpdate] = None,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Mark all current transactions and any specified notifications for this user as deleted.
+    """
+    res = await db.execute(
+        select(Transaction.id).filter(Transaction.user_id == current_user.id)
+    )
+    tx_ids = set(str(r[0]) for r in res.all())
+    if payload and payload.notification_ids:
+        tx_ids.update(str(nid).strip() for nid in payload.notification_ids if str(nid).strip())
+
+    res_states = await db.execute(
+        select(UserNotificationState).filter(UserNotificationState.user_id == current_user.id)
+    )
+    existing = {r.notification_id: r for r in res_states.scalars().all()}
+
+    for nid in tx_ids:
+        if nid in existing:
+            existing[nid].is_deleted = True
+            existing[nid].is_read = True
+        else:
+            db.add(UserNotificationState(
+                user_id=current_user.id,
+                notification_id=nid,
+                is_deleted=True,
+                is_read=True
+            ))
+    await db.commit()
+    return {"status": "success", "cleared_count": len(tx_ids)}
 
 @router.post("/avatar", response_model=UserResponse)
 @router.post("/me/avatar", response_model=UserResponse)
