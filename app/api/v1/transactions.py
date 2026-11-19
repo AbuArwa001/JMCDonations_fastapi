@@ -188,6 +188,77 @@ class STKPushInput(BaseModel):
     user_id: Optional[Union[uuid.UUID, str]] = None
 
 
+async def _resolve_donation(db: AsyncSession, raw_id: Any) -> Donation:
+    """
+    Resolve donation record by UUID or alias ('zakat_al_mal', 'general', etc.).
+    """
+    if not raw_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Donation ID is required"
+        )
+    raw_str = str(raw_id).strip()
+    is_zakat_alias = raw_str.lower() in ["zakat_al_mal", "zakat", "zakat-al-mal", "zakat_ul_mal"]
+    is_general_alias = raw_str.lower() in ["general", "general_donation", "general-donation"]
+
+    if is_zakat_alias:
+        # Search for active campaign with 'zakat' in title or description
+        z_res = await db.execute(
+            select(Donation).filter(
+                Donation.title.ilike("%zakat%"),
+                Donation.status == "Active",
+                Donation.is_deleted == False
+            )
+        )
+        found = z_res.scalars().first()
+        if not found:
+            # Fallback to any active campaign
+            f_res = await db.execute(
+                select(Donation).filter(Donation.status == "Active", Donation.is_deleted == False)
+            )
+            found = f_res.scalars().first()
+        if found:
+            return found
+
+    if is_general_alias:
+        f_res = await db.execute(
+            select(Donation).filter(Donation.status == "Active", Donation.is_deleted == False)
+        )
+        found = f_res.scalars().first()
+        if found:
+            return found
+
+    try:
+        target_donation_id = uuid.UUID(raw_str)
+    except ValueError:
+        # Try matching campaign title or slug before rejecting
+        t_res = await db.execute(
+            select(Donation).filter(
+                Donation.title.ilike(f"%{raw_str}%"),
+                Donation.status == "Active",
+                Donation.is_deleted == False
+            )
+        )
+        found = t_res.scalars().first()
+        if found:
+            return found
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid donation UUID: {raw_id}"
+        )
+
+    d_res = await db.execute(
+        select(Donation).filter(Donation.id == target_donation_id, Donation.is_deleted == False)
+    )
+    donation = d_res.scalars().first()
+    if not donation:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Donation drive not found"
+        )
+    return donation
+
+
 @router.post("/initiate_stk_push")
 @router.post("/initiate_stk_push/", include_in_schema=False)
 @router.post("/initiate-stk-push", include_in_schema=False)
@@ -200,31 +271,12 @@ async def initiate_stk_push(
     """
     Initiate Safaricom Daraja M-Pesa STK push for a donation drive.
     """
-    # 1. Resolve donation ID (accept either 'donation' or 'donation_id')
+    # 1. Resolve donation (accepts UUID hex or aliases like 'zakat_al_mal')
     raw_id = payload.donation or payload.donation_id
-    if not raw_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Donation ID is required"
-        )
-    try:
-        target_donation_id = uuid.UUID(str(raw_id).strip())
-    except ValueError:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid donation UUID: {raw_id}"
-        )
+    donation = await _resolve_donation(db, raw_id)
+    target_donation_id = donation.id
 
-    # 2. Verify donation exists and is active
-    d_res = await db.execute(
-        select(Donation).filter(Donation.id == target_donation_id, Donation.is_deleted == False)
-    )
-    donation = d_res.scalars().first()
-    if not donation:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Donation drive not found"
-        )
+    # 2. Verify donation is active
 
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     is_past_due = donation.end_date is not None and donation.end_date < now
@@ -525,29 +577,10 @@ async def initiate_paypal_payment(
     """
     Initiate a PayPal donation by creating an order and returning the approval URL.
     """
+    # 1. Resolve donation (accepts UUID hex or aliases like 'zakat_al_mal')
     raw_id = payload.donation or payload.donation_id
-    if not raw_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Donation ID is required",
-        )
-    try:
-        target_donation_id = uuid.UUID(str(raw_id).strip())
-    except ValueError:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid donation UUID: {raw_id}",
-        )
-
-    d_res = await db.execute(
-        select(Donation).filter(Donation.id == target_donation_id, Donation.is_deleted == False)
-    )
-    donation = d_res.scalars().first()
-    if not donation:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Donation drive not found",
-        )
+    donation = await _resolve_donation(db, raw_id)
+    target_donation_id = donation.id
 
     raw_paypal_name = payload.account_name or ""
     if current_user and current_user.full_name:
@@ -697,20 +730,10 @@ async def initiate_card_payment(
     """
     Initiate a card payment by creating a pending transaction and returning tx_ref and public key.
     """
+    # 1. Resolve donation (accepts UUID hex or aliases like 'zakat_al_mal')
     raw_id = payload.donation_id or payload.donation
-    if not raw_id:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Donation ID is required")
-    try:
-        target_donation_id = uuid.UUID(str(raw_id).strip())
-    except ValueError:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid donation UUID: {raw_id}")
-
-    d_res = await db.execute(
-        select(Donation).filter(Donation.id == target_donation_id, Donation.is_deleted == False)
-    )
-    donation = d_res.scalars().first()
-    if not donation:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Donation drive not found")
+    donation = await _resolve_donation(db, raw_id)
+    target_donation_id = donation.id
 
     ref = f"JM-{uuid.uuid4()}"
     donor_account_name = current_user.full_name if current_user else "Anonymous"
@@ -773,12 +796,8 @@ async def verify_flutterwave_payment(
     # 2. Create if missing (Direct Charge flow)
     if not tx:
         raw_id = payload.donation_id
-        if not raw_id:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing donation_id for transaction")
-        try:
-            target_donation_id = uuid.UUID(str(raw_id).strip())
-        except ValueError:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid donation UUID: {raw_id}")
+        donation = await _resolve_donation(db, raw_id)
+        target_donation_id = donation.id
 
         tx = Transaction(
             transaction_reference=tx_ref,
