@@ -369,15 +369,25 @@ async def initiate_stk_push(
         shortcode = settings.MPESA_SHORTCODE
 
     # 6. Trigger M-Pesa STK Push
-    # Prioritize the campaign's configured Paybill Account (e.g. "EDU", "ABLUTION-EXP")
-    raw_account_ref = (
-        (donation.account_name.strip() if donation.account_name and donation.account_name.strip() else None)
-        or (donation.account_number.strip() if donation.account_number and donation.account_number.strip() else None)
-        or (payload.account_name.strip() if payload.account_name and payload.account_name.strip().lower() != "donation" and payload.account_name.strip() != donation.title else None)
-        or (donor_account_name if donor_account_name and donor_account_name != "Anonymous" and donor_account_name != donation.title else None)
-        or "JamiaWaqf"
+    # Prioritize Zakat account if applicable, or the campaign's configured Paybill Account (e.g. "JamiaZakat", "EDU", "ABLUTION-EXP")
+    raw_id_str = str(payload.donation or payload.donation_id or "").strip().lower()
+    is_zakat = (
+        raw_id_str in ["zakat_al_mal", "zakat", "zakat-al-mal", "zakat_ul_mal"]
+        or "zakat" in (donation.title or "").lower()
+        or (payload.account_name or "").strip().lower() == "jamiazakat"
     )
-    account_ref = "".join(c for c in raw_account_ref if c.isalnum() or c in "-_")[:12].strip() or "JamiaWaqf"
+
+    if is_zakat:
+        account_ref = "JamiaZakat"
+    else:
+        raw_account_ref = (
+            (donation.account_name.strip() if donation.account_name and donation.account_name.strip() else None)
+            or (donation.account_number.strip() if donation.account_number and donation.account_number.strip() else None)
+            or (payload.account_name.strip() if payload.account_name and payload.account_name.strip().lower() != "donation" and payload.account_name.strip() != donation.title else None)
+            or (donor_account_name if donor_account_name and donor_account_name != "Anonymous" and donor_account_name != donation.title else None)
+            or "JamiaWaqf"
+        )
+        account_ref = "".join(c for c in raw_account_ref if c.isalnum() or c in "-_")[:12].strip() or "JamiaWaqf"
     trans_desc = f"Donation {account_ref}"[:30]
 
     try:
