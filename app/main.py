@@ -20,13 +20,18 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+    except Exception as e:
+        logger.warning(f"Database schema auto-creation skipped or connection error: {e}")
+
     try:
         async with AsyncSessionLocal() as session:
             await ensure_default_roles(session)
     except Exception as e:
-        logger.error(f"RBAC role seeding skipped: {e}")
+        logger.warning(f"RBAC role seeding skipped: {e}")
+
     cleanup_task = asyncio.create_task(pending_cleanup_loop())
     auto_close_task = asyncio.create_task(expired_donations_loop())
     yield
