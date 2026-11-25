@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.core.config import settings
@@ -44,6 +45,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title=settings.PROJECT_NAME, openapi_url=f"{settings.API_V1_STR}/openapi.json", description="FastAPI Architecture with V1 & V2 versioning", lifespan=lifespan)
 register_exception_handlers(app)
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 if settings.CORS_ALLOWED_ORIGIN:
     app.add_middleware(
