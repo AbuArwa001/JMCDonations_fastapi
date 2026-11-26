@@ -2,7 +2,7 @@ import uuid
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.api.deps import get_db, require_permission, get_optional_current_user
+from app.api.deps import get_db, require_permission, get_optional_current_user, get_current_user
 from app.repositories.transaction_repo import TransactionRepository
 from app.services.transaction_service import TransactionService
 from app.services.stk_service import stk_service
@@ -57,9 +57,11 @@ async def paypal_callback(tx_id: Optional[str] = None, token: Optional[str] = No
 async def list_transactions(
     skip: int = Query(0, ge=0), limit: int = Query(50, ge=1, le=100), donation_id: Optional[uuid.UUID] = None,
     status: Optional[str] = None, payment_method: Optional[str] = None, search: Optional[str] = None,
-    user=Depends(require_permission("donations.view")), db: AsyncSession = Depends(get_db)
+    user=Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ):
-    items, _ = await TransactionRepository(db).search(skip=skip, limit=limit, donation_id=donation_id, status=status, payment_method=payment_method, search_query=search)
+    uid = None if (user.is_admin or getattr(user, "is_superuser", False)) else user.id
+    phone = None if uid is None else user.phone_number
+    items, _ = await TransactionRepository(db).search(skip=skip, limit=limit, donation_id=donation_id, status=status, payment_method=payment_method, search_query=search, user_id=uid, phone_number=phone)
     return items
 @router.post("/verify-cash/{id}", response_model=TransactionResponse)
 async def verify_cash_transaction(id: uuid.UUID, user=Depends(require_permission("donations.manage")), db: AsyncSession = Depends(get_db)):

@@ -20,10 +20,16 @@ class TransactionRepository(BaseRepository[Transaction]):
     async def search(
         self, skip: int = 0, limit: int = 20, donation_id: Optional[uuid.UUID] = None,
         status: Optional[str] = None, payment_method: Optional[str] = None,
-        search_query: Optional[str] = None
+        search_query: Optional[str] = None, user_id: Optional[uuid.UUID] = None,
+        phone_number: Optional[str] = None
     ) -> Tuple[List[Transaction], int]:
         stmt = select(Transaction)
         count_stmt = select(func.count(Transaction.id))
+        if user_id:
+            user_cond = (Transaction.user_id == user_id)
+            if phone_number and len(phone_number) >= 9:
+                user_cond = or_(user_cond, Transaction.account_number.contains(phone_number[-9:]))
+            stmt, count_stmt = stmt.where(user_cond), count_stmt.where(user_cond)
         if donation_id:
             stmt, count_stmt = stmt.where(Transaction.donation_id == donation_id), count_stmt.where(Transaction.donation_id == donation_id)
         if status:
