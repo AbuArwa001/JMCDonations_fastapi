@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, timezone
-from typing import Optional, List
+from typing import Optional, List, Union
 from pydantic import BaseModel, ConfigDict, field_serializer
 from app.schemas.v1.accounts import (
     BankAccountBase, BankAccountCreate, BankAccountUpdate, BankAccountResponse,
@@ -56,7 +56,31 @@ class TransactionResponse(TransactionBase):
         return v.replace(tzinfo=timezone.utc).isoformat() if v.tzinfo is None else v.isoformat()
 
 class STKPushRequest(BaseModel):
-    donation_id: uuid.UUID
     phone_number: str
     amount: float
+    account_name: Optional[str] = "Donation"
+    donation: Optional[str] = None
+    donation_id: Optional[Union[uuid.UUID, str]] = None
+    user_id: Optional[Union[uuid.UUID, str]] = None
+
+STKPushInput = STKPushRequest
+
+class PayPalInitInput(BaseModel):
+    amount: float
+    donation: Optional[str] = None
+    donation_id: Optional[str] = None
+    account_name: Optional[str] = "Donation"
+    currency: Optional[str] = "USD"
+
+class CardPaymentInput(BaseModel):
+    amount: float
+    donation_id: Optional[str] = None
+    donation: Optional[str] = None
+
+class FlutterwaveVerifyInput(BaseModel):
+    tx_ref: str
+    flw_ref: Optional[str] = ""
+    amount: Optional[float] = 0.0
+    donation_id: Optional[str] = None
+    status: Optional[str] = "successful"
 
