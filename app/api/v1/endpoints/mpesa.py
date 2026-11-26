@@ -1,5 +1,6 @@
 import logging
 from typing import Dict, Any
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_db, get_optional_current_user
@@ -27,8 +28,9 @@ async def mpesa_callback(request: Request, db: AsyncSession = Depends(get_db)):
     if checkout_id:
         tx = await TransactionService(db).repo.get_by_reference(checkout_id)
         if tx:
-            if result_code == 0:
+            if str(result_code) == "0":
                 tx.payment_status = "Completed"
+                tx.completed_at = datetime.now(timezone.utc).replace(tzinfo=None)
                 items = cb.get("CallbackMetadata", {}).get("Item", [])
                 for item in items:
                     if item.get("Name") == "MpesaReceiptNumber":

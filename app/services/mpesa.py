@@ -61,8 +61,9 @@ class MpesaService:
         password = self._generate_password(sc, pk, timestamp)
         token = await self.get_access_token(consumer_key, consumer_secret)
         payload = {"BusinessShortCode": sc, "Password": password, "Timestamp": timestamp, "CheckoutRequestID": checkout_request_id}
+        base = self.base_url or "https://api.safaricom.co.ke"
         async with httpx.AsyncClient() as client:
-            resp = await client.post(f"{self.base_url}/mpesa/stkpushquery/v1/query", json=payload, headers={"Authorization": f"Bearer {token}"}, timeout=15)
+            resp = await client.post(f"{base}/mpesa/stkpushquery/v1/query", json=payload, headers={"Authorization": f"Bearer {token}"}, timeout=15)
             resp.raise_for_status()
             return resp.json()
 
