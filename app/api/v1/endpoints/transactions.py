@@ -2,7 +2,6 @@ import uuid
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.api.deps import get_db, require_permission, get_optional_current_user
 from app.repositories.transaction_repo import TransactionRepository
 from app.services.transaction_service import TransactionService
@@ -17,16 +16,13 @@ from app.schemas.v1.transactions import (
 
 router = APIRouter()
 
-
 # ── Mobile Payment Endpoints ───────────────────────────────────────────────
-
 @router.post("/initiate_stk_push")
 @router.post("/initiate_stk_push/", include_in_schema=False)
 @router.post("/initiate-stk-push", include_in_schema=False)
 @router.post("/initiate-stk-push/", include_in_schema=False)
 async def initiate_stk_push(payload: STKPushInput, user=Depends(get_optional_current_user), db: AsyncSession = Depends(get_db)):
     return await stk_service.initiate_stk_push(db, payload, user)
-
 
 @router.get("/check_status")
 @router.get("/check_status/", include_in_schema=False)
@@ -35,14 +31,12 @@ async def initiate_stk_push(payload: STKPushInput, user=Depends(get_optional_cur
 async def check_status(reference: str, db: AsyncSession = Depends(get_db)):
     return await stk_service.check_status(db, reference)
 
-
 @router.post("/initiate_card_payment", status_code=status.HTTP_201_CREATED)
 @router.post("/initiate_card_payment/", status_code=status.HTTP_201_CREATED, include_in_schema=False)
 @router.post("/initiate-card-payment", status_code=status.HTTP_201_CREATED, include_in_schema=False)
 @router.post("/initiate-card-payment/", status_code=status.HTTP_201_CREATED, include_in_schema=False)
 async def initiate_card_payment(payload: CardPaymentInput, user=Depends(get_optional_current_user), db: AsyncSession = Depends(get_db)):
     return await card_payment_service.initiate_card(db, payload, user)
-
 
 @router.post("/verify_flutterwave_payment")
 @router.post("/verify_flutterwave_payment/", include_in_schema=False)
@@ -51,14 +45,12 @@ async def initiate_card_payment(payload: CardPaymentInput, user=Depends(get_opti
 async def verify_flutterwave_payment(payload: FlutterwaveVerifyInput, user=Depends(get_optional_current_user), db: AsyncSession = Depends(get_db)):
     return await card_payment_service.verify_flutterwave(db, payload, user)
 
-
 @router.post("/initiate_paypal_payment")
 @router.post("/initiate_paypal_payment/", include_in_schema=False)
 @router.post("/initiate-paypal-payment", include_in_schema=False)
 @router.post("/initiate-paypal-payment/", include_in_schema=False)
 async def initiate_paypal_payment(payload: PayPalInitInput, user=Depends(get_optional_current_user), db: AsyncSession = Depends(get_db)):
     return await paypal_payment_service.initiate_paypal(db, payload, user)
-
 
 @router.get("/paypal_callback")
 @router.get("/paypal_callback/", include_in_schema=False)
@@ -67,9 +59,7 @@ async def initiate_paypal_payment(payload: PayPalInitInput, user=Depends(get_opt
 async def paypal_callback(tx_id: Optional[str] = None, token: Optional[str] = None, cancel: Optional[str] = None, db: AsyncSession = Depends(get_db)):
     return await paypal_payment_service.handle_callback(db, tx_id, token, cancel)
 
-
 # ── Standard CRUD & Admin Endpoints ────────────────────────────────────────
-
 @router.get("/", response_model=List[TransactionResponse])
 @router.get("", response_model=List[TransactionResponse], include_in_schema=False)
 async def list_transactions(
@@ -80,11 +70,9 @@ async def list_transactions(
     items, _ = await TransactionRepository(db).search(skip=skip, limit=limit, donation_id=donation_id, status=status, payment_method=payment_method, search_query=search)
     return items
 
-
 @router.post("/verify-cash/{id}", response_model=TransactionResponse)
 async def verify_cash_transaction(id: uuid.UUID, user=Depends(require_permission("donations.manage")), db: AsyncSession = Depends(get_db)):
     return await TransactionService(db).verify_cash(id, user.id)
-
 
 @router.post("/bulk-delete", response_model=BulkDeleteTransactionsResponse)
 @router.post("/bulk-delete/", response_model=BulkDeleteTransactionsResponse, include_in_schema=False)
@@ -93,31 +81,22 @@ async def bulk_delete_transactions(req: BulkDeleteTransactionsRequest, user=Depe
     await db.commit()
     return BulkDeleteTransactionsResponse(deleted_count=count, message=f"Successfully deleted {count} transactions")
 
-
 @router.get("/{id}", response_model=TransactionResponse)
 async def get_transaction(id: uuid.UUID, user=Depends(require_permission("donations.view")), db: AsyncSession = Depends(get_db)):
     tx = await TransactionRepository(db).get_by_id(id)
-    if not tx:
-        raise HTTPException(status_code=404, detail="Transaction not found")
+    if not tx: raise HTTPException(status_code=404, detail="Transaction not found")
     return tx
-
 
 @router.put("/{id}", response_model=TransactionResponse)
 async def update_transaction(id: uuid.UUID, data: TransactionUpdate, user=Depends(require_permission("donations.manage")), db: AsyncSession = Depends(get_db)):
     tx = await TransactionRepository(db).get_by_id(id)
-    if not tx:
-        raise HTTPException(status_code=404, detail="Transaction not found")
-    for field, val in data.model_dump(exclude_unset=True).items():
-        setattr(tx, field, val)
-    await db.commit()
-    return tx
-
+    if not tx: raise HTTPException(status_code=404, detail="Transaction not found")
+    for field, val in data.model_dump(exclude_unset=True).items(): setattr(tx, field, val)
+    await db.commit(); return tx
 
 @router.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_transaction(id: uuid.UUID, user=Depends(require_permission("donations.delete")), db: AsyncSession = Depends(get_db)):
     repo = TransactionRepository(db)
     tx = await repo.get_by_id(id)
-    if not tx:
-        raise HTTPException(status_code=404, detail="Transaction not found")
-    await repo.delete(tx)
-    await db.commit()
+    if not tx: raise HTTPException(status_code=404, detail="Transaction not found")
+    await repo.delete(tx); await db.commit()
