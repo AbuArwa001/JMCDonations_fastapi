@@ -9,6 +9,11 @@ from app.schemas.v1.community import CommunityContentResponse, CommunityContentC
 
 router = APIRouter()
 
+@router.get("/content", response_model=List[CommunityContentResponse])
+@router.get("/content/", response_model=List[CommunityContentResponse])
+async def list_content(content_type: str = "darsa", db: AsyncSession = Depends(get_db)):
+    return await CommunityRepository(db).list_content_by_type(content_type.lower())
+
 @router.get("/darsas", response_model=List[CommunityContentResponse])
 async def list_darsas(db: AsyncSession = Depends(get_db)):
     return await CommunityRepository(db).list_content_by_type("darsa")

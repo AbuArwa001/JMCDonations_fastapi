@@ -19,7 +19,11 @@ class CommunityRepository:
         return list((await self.db.execute(stmt)).scalars().all())
 
     async def list_content_by_type(self, ctype: str) -> List[CommunityContent]:
-        stmt = select(CommunityContent).where(CommunityContent.content_type == ctype, CommunityContent.is_active.is_(True))
+        from sqlalchemy import func
+        stmt = select(CommunityContent).where(
+            func.upper(CommunityContent.content_type) == func.upper(ctype),
+            CommunityContent.is_published.is_(True),
+        )
         return list((await self.db.execute(stmt)).scalars().all())
 
     async def list_duas(self, category_id: Optional[int] = None) -> List[Dua]:
