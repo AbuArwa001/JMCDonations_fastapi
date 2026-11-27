@@ -30,6 +30,24 @@ class JumaKhutbaResponse(JumaKhutbaBase):
     created_at: datetime
     model_config = ConfigDict(from_attributes=True)
 
+    @field_serializer("created_at", when_used="json")
+    def serialize_datetime(self, v: Optional[datetime]) -> Optional[str]:
+        if v is None:
+            return None
+        return v.replace(tzinfo=timezone.utc).isoformat() if v.tzinfo is None else v.isoformat()
+
+    @field_serializer("khutba_time", when_used="json")
+    def serialize_time(self, v: Optional[time]) -> Optional[str]:
+        if v is None:
+            return None
+        return v.strftime("%H:%M:%S")
+
+    @field_serializer("khutba_date", when_used="json")
+    def serialize_date(self, v: Optional[date]) -> Optional[str]:
+        if v is None:
+            return None
+        return v.isoformat()
+
 class DeviceTokenCreate(BaseModel):
     fcm_token: str
     platform: Optional[str] = "Android"
