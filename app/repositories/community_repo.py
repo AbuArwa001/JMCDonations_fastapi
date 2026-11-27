@@ -18,13 +18,14 @@ class CommunityRepository:
         stmt = select(FridayBulletin).order_by(FridayBulletin.published_date.desc()).offset(skip).limit(limit)
         return list((await self.db.execute(stmt)).scalars().all())
 
-    async def list_content_by_type(self, ctype: str) -> List[CommunityContent]:
+    async def list_content_by_type(self, ctype: str, published_only: bool = False) -> List[CommunityContent]:
         from sqlalchemy import func
         stmt = select(CommunityContent).where(
             func.upper(CommunityContent.content_type) == func.upper(ctype),
-            CommunityContent.is_published.is_(True),
         )
-        return list((await self.db.execute(stmt)).scalars().all())
+        if published_only:
+            stmt = stmt.where(CommunityContent.is_published.is_(True))
+        return list((await self.db.execute(stmt.order_by(CommunityContent.created_at.desc()))).scalars().all())
 
     async def list_duas(self, category_id: Optional[int] = None) -> List[Dua]:
         stmt = select(Dua).where(Dua.published.is_(True))
@@ -32,8 +33,11 @@ class CommunityRepository:
             stmt = stmt.where(Dua.category_id == category_id)
         return list((await self.db.execute(stmt.order_by(Dua.display_order))).scalars().all())
 
-    async def list_events(self, upcoming_only: bool = False) -> List[Event]:
-        stmt = select(Event).where(Event.published.is_(True))
+    async def list_events(self, upcoming_only: bool = False, published_only: bool = False) -> List[Event]:
+        from sqlalchemy.orm import selectinload
+        stmt = select(Event).options(selectinload(Event.gallery_images))
+        if published_only:
+            stmt = stmt.where(Event.published.is_(True))
         if upcoming_only:
             stmt = stmt.where(Event.event_date >= date.today())
         return list((await self.db.execute(stmt.order_by(Event.event_date.asc()))).scalars().all())

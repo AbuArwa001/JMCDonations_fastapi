@@ -45,8 +45,8 @@ class Event(Base):
     
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     
-    gallery_images: Mapped[List["EventImage"]] = relationship("EventImage", back_populates="event", cascade="all, delete-orphan")
-    notifications: Mapped[List["NotificationLog"]] = relationship("NotificationLog", back_populates="related_event")
+    gallery_images: Mapped[List["EventImage"]] = relationship("EventImage", back_populates="event", cascade="all, delete-orphan", lazy="selectin")
+    notifications: Mapped[List["NotificationLog"]] = relationship("NotificationLog", back_populates="related_event", lazy="selectin")
 
 
 class EventImage(Base):
