@@ -19,6 +19,8 @@ async def list_notification_logs(limit: int = 50, db: AsyncSession = Depends(get
 
 @router.post("/register_device", response_model=DeviceTokenResponse)
 @router.post("/register_device/", response_model=DeviceTokenResponse)
+@router.post("/register-device", response_model=DeviceTokenResponse)
+@router.post("/register-device/", response_model=DeviceTokenResponse)
 @router.post("/devices/register", response_model=DeviceTokenResponse)
 @router.post("/devices/register/", response_model=DeviceTokenResponse)
 async def register_device(data: DeviceTokenCreate, db: AsyncSession = Depends(get_db)):
