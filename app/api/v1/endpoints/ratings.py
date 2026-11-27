@@ -10,6 +10,12 @@ from app.schemas.v1.ratings import RatingResponse, RatingCreate
 
 router = APIRouter()
 
+@router.get("/", response_model=List[RatingResponse])
+@router.get("", response_model=List[RatingResponse])
+async def list_all_ratings(db: AsyncSession = Depends(get_db)):
+    repo = RatingRepository(db)
+    return await repo.get_multi(skip=0, limit=100)
+
 @router.get("/donation/{donation_id}", response_model=List[RatingResponse])
 async def list_ratings_for_donation(donation_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     return await RatingRepository(db).list_for_donation(donation_id)

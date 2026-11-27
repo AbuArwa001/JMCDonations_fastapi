@@ -14,8 +14,8 @@ class CommunityRepository:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def list_bulletins(self, skip: int = 0, limit: int = 20) -> List[FridayBulletin]:
-        stmt = select(FridayBulletin).order_by(FridayBulletin.bulletin_date.desc()).offset(skip).limit(limit)
+    async def list_bulletins(self, skip: int = 0, limit: int = 50) -> List[FridayBulletin]:
+        stmt = select(FridayBulletin).order_by(FridayBulletin.published_date.desc()).offset(skip).limit(limit)
         return list((await self.db.execute(stmt)).scalars().all())
 
     async def list_content_by_type(self, ctype: str) -> List[CommunityContent]:

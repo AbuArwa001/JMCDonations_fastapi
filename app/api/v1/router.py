@@ -21,6 +21,7 @@ router.include_router(mpesa.router, prefix="/transactions/mpesa", tags=["transac
 router.include_router(paypal.router, prefix="/paypal", tags=["transactions"])
 router.include_router(paypal.router, prefix="/transactions/paypal", tags=["transactions"])
 router.include_router(accounts.router, prefix="/accounts", tags=["accounts"])
+router.include_router(accounts.router, prefix="/bank-accounts", tags=["accounts"])
 router.include_router(accounts.router, prefix="/transactions/accounts", tags=["accounts"])
 router.include_router(transfers.router, prefix="/transfers", tags=["transfers"])
 router.include_router(transfers.router, prefix="/transactions/transfers", tags=["transfers"])

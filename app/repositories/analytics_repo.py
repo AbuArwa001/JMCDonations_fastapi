@@ -29,6 +29,42 @@ class AnalyticsRepository:
             "total_collected_month": float(month),
         }
 
+    async def get_donation_trends(self, period: str = "week") -> List[Dict[str, Any]]:
+        now = datetime.now(timezone.utc)
+        days = 7 if period == "week" else (30 if period == "month" else 365)
+        start_date = now - timedelta(days=days)
+
+        stmt = (
+            select(
+                func.date(Transaction.donated_at).label("d"),
+                func.coalesce(func.sum(Transaction.amount), 0.0).label("tot")
+            )
+            .where(
+                Transaction.payment_status == "Completed",
+                Transaction.donated_at >= start_date
+            )
+            .group_by(func.date(Transaction.donated_at))
+            .order_by(func.date(Transaction.donated_at))
+        )
+        res = await self.db.execute(stmt)
+        data_by_date = {str(r[0]): float(r[1]) for r in res.all()}
+
+        trends = []
+        if period == "week":
+            for i in range(7):
+                dt = (now - timedelta(days=6 - i)).date()
+                key = str(dt)
+                trends.append({"name": dt.strftime("%a"), "amount": data_by_date.get(key, 0.0)})
+        elif period == "month":
+            for i in range(30):
+                dt = (now - timedelta(days=29 - i)).date()
+                key = str(dt)
+                trends.append({"name": dt.strftime("%d %b"), "amount": data_by_date.get(key, 0.0)})
+        else:
+            for k, v in data_by_date.items():
+                trends.append({"name": k, "amount": v})
+        return trends
+
     async def get_category_breakdown(self) -> List[Dict[str, Any]]:
         stmt = (
             select(Category.category_name, Category.color, func.coalesce(func.sum(Transaction.amount), 0.0))
