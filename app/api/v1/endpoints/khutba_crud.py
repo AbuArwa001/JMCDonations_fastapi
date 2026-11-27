@@ -6,6 +6,7 @@ from app.api.deps import get_db, require_permission
 from app.models.khutba import JumaKhutba
 from app.schemas.v1.khutba import JumaKhutbaResponse, JumaKhutbaCreate, JumaKhutbaUpdate
 from app.api.v1.endpoints.khutba_helpers import parse_date, parse_time, save_khutba_photo
+from app.api.v1.endpoints.khutba_notify import auto_notify_khutba
 
 router = APIRouter()
 
@@ -43,6 +44,8 @@ async def create_khutba(
     db.add(k)
     await db.commit()
     await db.refresh(k)
+    if k.published:
+        await auto_notify_khutba(db, k)
     return k
 
 @router.get("/{id}", response_model=JumaKhutbaResponse)

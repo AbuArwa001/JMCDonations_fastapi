@@ -16,8 +16,8 @@ def _get_android_config():
     )
 
 def _get_apns_config():
-    return messaging.ApnsConfig(
-        payload=messaging.ApnsPayload(
+    return messaging.APNSConfig(
+        payload=messaging.APNSPayload(
             aps=messaging.Aps(sound="default", content_available=True)
         )
     )

@@ -235,31 +235,19 @@ async def notify_event(id: int, current_user=Depends(require_permission("events.
         raise HTTPException(status_code=404, detail="Event not found")
     title = f"New Event: {e.title}"
     body = f"{e.venue_name} on {e.event_date.strftime('%d %b %Y')}"
-    payload = {"type": "event", "event_id": str(e.id)}
-    for topic_name in ("events", "all_users", "general"):
-        try:
-            firebase_service.send_topic_notification(topic=topic_name, title=title, body=body, data=payload)
-        except Exception:
-            pass
-    from app.models.khutba import DeviceToken
-    tokens = list((await db.execute(select(DeviceToken.fcm_token))).scalars().all())
-    count = 0
-    if tokens:
-        try:
-            count = firebase_service.send_multicast(tokens=tokens, title=title, body=body, data=payload)
-        except Exception:
-            pass
-    recipient_count = max(count, len(tokens), 1)
-    log = NotificationLog(
+    payload = {"type": "event", "event_id": str(e.id), "title": str(e.title)}
+    from app.services.notification_dispatcher import dispatch_broadcast
+    count = await dispatch_broadcast(
+        db=db,
         title=title,
         body=body,
+        topics=["events", "all_users", "general"],
+        data=payload,
         notification_type="event",
-        related_event_id=e.id,
-        recipient_count=recipient_count
+        related_id_field="related_event_id",
+        related_id_val=e.id,
     )
-    db.add(log)
-    await db.commit()
-    return {"status": "success", "success_count": recipient_count}
+    return {"status": "success", "success_count": count}
 
 @router.post("/images")
 @router.post("/images/")

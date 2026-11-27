@@ -9,6 +9,7 @@ from app.services.donation_service import DonationService
 from app.models.donations import Donation, SavedDonation
 from app.models.users import User
 from app.schemas.v1.donations import DonationResponse, DonationCreate, DonationUpdate, SavedDonationResponse
+from app.services.notification_dispatcher import dispatch_broadcast
 
 router = APIRouter()
 
@@ -46,6 +47,16 @@ async def create_donation(
 ):
     service = DonationService(db)
     d = await service.create_donation(data, current_user.id)
+    if str(getattr(d, "status", "")).lower() == "active":
+        try:
+            await dispatch_broadcast(
+                db=db, title=f"New Mosque Campaign: {d.title}", body=f"Support our mosque drive: {d.title}. Tap to view.",
+                topics=["campaigns", "all_users"], data={"type": "donation", "donation_id": str(d.id), "title": str(d.title)},
+                image_url=d.image_url if getattr(d, "image_url", None) else None, notification_type="donation",
+                related_id_field="related_donation_id", related_id_val=str(d.id),
+            )
+        except Exception:
+            pass
     return await service.enrich_donation(d)
 
 @router.get("/{id_or_slug}", response_model=DonationResponse)
