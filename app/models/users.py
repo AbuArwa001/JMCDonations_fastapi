@@ -36,7 +36,7 @@ class User(Base):
     fcm_token: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     
     role_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("roles.id", ondelete="SET NULL"), nullable=True)
-    role: Mapped[Optional["Role"]] = relationship("Role", back_populates="users")
+    role: Mapped[Optional["Role"]] = relationship("Role", back_populates="users", lazy="selectin")
     
     ss_login: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     firebase_uid: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)

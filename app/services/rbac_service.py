@@ -26,6 +26,15 @@ class RBACService:
                     is_system=r_data.get("is_system", False),
                 )
                 await self.repo.create(new_role)
+            else:
+                if not existing.color and r_data.get("color"):
+                    existing.color = r_data["color"]
+                if not existing.description and r_data.get("description"):
+                    existing.description = r_data["description"]
+                if (not existing.permissions or existing.permissions == []) and r_data.get("permissions"):
+                    existing.permissions = r_data["permissions"]
+                if r_data.get("is_system") is not None:
+                    existing.is_system = r_data["is_system"]
         await self.db.commit()
 
     async def assign_user_role(self, user_id: uuid.UUID, role_id: Optional[uuid.UUID]):
