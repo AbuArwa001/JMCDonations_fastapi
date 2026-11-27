@@ -82,23 +82,32 @@ async def notify_bulletin(id: int, current_user=Depends(require_permission("bull
     b = await db.get(FridayBulletin, id)
     if not b:
         raise HTTPException(status_code=404, detail="Bulletin not found")
-    try:
-        firebase_service.send_topic_notification(
-            topic="general",
-            title=f"New Friday Bulletin: {b.title}",
-            body=f"Issue #{b.issue_number or ''} is now available to read.",
-        )
-    except Exception:
-        pass
+    title = f"New Friday Bulletin: {b.title}"
+    body = f"Issue #{b.issue_number or ''} is now available to read."
+    payload = {"type": "bulletin", "bulletin_id": str(b.id)}
+    for topic_name in ("bulletins", "all_users", "general"):
+        try:
+            firebase_service.send_topic_notification(topic=topic_name, title=title, body=body, data=payload)
+        except Exception:
+            pass
+    from app.models.khutba import DeviceToken
+    tokens = list((await db.execute(select(DeviceToken.fcm_token))).scalars().all())
+    count = 0
+    if tokens:
+        try:
+            count = firebase_service.send_multicast(tokens=tokens, title=title, body=body, data=payload)
+        except Exception:
+            pass
+    recipient_count = max(count, len(tokens), 1)
     log = NotificationLog(
-        title=f"New Friday Bulletin: {b.title}",
-        body=f"Issue #{b.issue_number or ''} is now available to read.",
+        title=title,
+        body=body,
         notification_type="bulletin",
-        recipient_count=0
+        recipient_count=recipient_count
     )
     db.add(log)
     await db.commit()
-    return {"status": "broadcasted", "bulletin_id": id}
+    return {"status": "broadcasted", "bulletin_id": id, "success_count": recipient_count}
 
 @router.get("/{id}", response_model=FridayBulletinResponse)
 async def get_bulletin(id: int, db: AsyncSession = Depends(get_db)):

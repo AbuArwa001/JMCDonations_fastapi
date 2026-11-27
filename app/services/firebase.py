@@ -7,7 +7,9 @@ from sqlalchemy import select
 from fastapi import HTTPException, status
 from datetime import datetime, timezone
 import json, logging
-from app.services.firebase_messaging import send_fcm_notification, send_fcm_topic_notification
+from app.services.firebase_messaging import (
+    send_fcm_notification, send_fcm_topic_notification, send_fcm_multicast
+)
 
 logger = logging.getLogger(__name__)
 
@@ -65,5 +67,8 @@ class FirebaseService:
 
     def send_topic_notification(self, topic: str, title: str, body: str, data: dict = None, image_url: str = None):
         return send_fcm_topic_notification(topic, title, body, data, image_url)
+
+    def send_multicast(self, tokens: list, title: str, body: str, data: dict = None, image_url: str = None) -> int:
+        return send_fcm_multicast(tokens, title, body, data, image_url)
 
 firebase_service = FirebaseService()
