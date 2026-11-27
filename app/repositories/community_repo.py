@@ -19,9 +19,16 @@ class CommunityRepository:
         return list((await self.db.execute(stmt)).scalars().all())
 
     async def list_content_by_type(self, ctype: str, published_only: bool = False) -> List[CommunityContent]:
-        from sqlalchemy import func
+        from sqlalchemy import func, or_
+        clean_type = ctype.strip().upper()
+        type_variants = {clean_type}
+        if "INSPIR" in clean_type:
+            type_variants.update(["INSPIRATION", "DAILY_INSPIRATION", "QUOTE"])
+        elif "DARSA" in clean_type:
+            type_variants.update(["DARSA", "DARSAS", "CLASS", "CLASSES"])
+
         stmt = select(CommunityContent).where(
-            func.upper(CommunityContent.content_type) == func.upper(ctype),
+            or_(*[func.upper(CommunityContent.content_type) == v for v in type_variants])
         )
         if published_only:
             stmt = stmt.where(CommunityContent.is_published.is_(True))
