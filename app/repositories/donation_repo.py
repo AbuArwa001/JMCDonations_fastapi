@@ -48,6 +48,12 @@ class DonationRepository(BaseRepository[Donation]):
         return (await self.db.execute(stmt)).scalars().first()
 
     async def list_saved(self, user_id: uuid.UUID) -> List[SavedDonation]:
-        stmt = select(SavedDonation).where(SavedDonation.user_id == user_id).order_by(SavedDonation.saved_at.desc())
+        from sqlalchemy.orm import selectinload
+        stmt = (
+            select(SavedDonation)
+            .options(selectinload(SavedDonation.donation))
+            .where(SavedDonation.user_id == user_id)
+            .order_by(SavedDonation.saved_at.desc())
+        )
         return list((await self.db.execute(stmt)).scalars().all())
 

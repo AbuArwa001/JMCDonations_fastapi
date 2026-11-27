@@ -82,17 +82,3 @@ async def delete_donation(
     d.deleted_at = datetime.now(timezone.utc).replace(tzinfo=None)
     await db.commit()
 
-@router.post("/{id_or_slug}/saved", response_model=SavedDonationResponse)
-async def save_donation(id_or_slug: str, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    repo = DonationRepository(db)
-    d = await repo.get_by_id_or_slug(id_or_slug)
-    if not d:
-        raise HTTPException(status_code=404, detail="Donation not found")
-    saved = await repo.get_saved(current_user.id, d.id)
-    if not saved:
-        saved = SavedDonation(user_id=current_user.id, donation_id=d.id)
-        db.add(saved)
-        await db.commit()
-        await db.refresh(saved)
-    enriched = await DonationService(db).enrich_donation(d)
-    return SavedDonationResponse(id=saved.id, user_id=saved.user_id, donation_id=saved.donation_id, donation=enriched, saved_at=saved.saved_at)

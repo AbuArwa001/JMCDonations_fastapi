@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 from app.api.v1.endpoints import (
-    health, auth, users, user_profile, rbac, donations, categories,
+    health, auth, users, user_profile, rbac, saved_donations, donations, categories,
     transactions, mpesa, paypal, accounts, transfers,
     community, bulletins, events, khutba, duas, quran,
     prayer_times, zakat, ratings, features, analytics
@@ -13,6 +13,7 @@ router.include_router(auth.router, prefix="/auth", tags=["authentication"])
 router.include_router(user_profile.router, prefix="/users", tags=["users"])
 router.include_router(users.router, prefix="/users", tags=["users"])
 router.include_router(rbac.router, prefix="/rbac", tags=["rbac"])
+router.include_router(saved_donations.router, prefix="/donations", tags=["donations"])
 router.include_router(donations.router, prefix="/donations", tags=["donations"])
 router.include_router(categories.router, prefix="/categories", tags=["categories"])
 router.include_router(transactions.router, prefix="/transactions", tags=["transactions"])

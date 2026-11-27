@@ -53,9 +53,9 @@ class SavedDonation(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
-    user: Mapped["User"] = relationship("User")
+    user: Mapped["User"] = relationship("User", lazy="selectin")
     
     donation_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("donations.id", ondelete="CASCADE"))
-    donation: Mapped["Donation"] = relationship("Donation", back_populates="saved_by")
+    donation: Mapped["Donation"] = relationship("Donation", back_populates="saved_by", lazy="selectin")
     
     saved_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
