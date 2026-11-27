@@ -8,6 +8,9 @@ from app.schemas.v1.zakat import NisabRateResponse, NisabRateUpdate, NisabRateCr
 router = APIRouter()
 
 @router.get("/nisab", response_model=NisabRateResponse)
+@router.get("/nisab/", response_model=NisabRateResponse)
+@router.get("/nisab-rate", response_model=NisabRateResponse)
+@router.get("/nisab-rate/", response_model=NisabRateResponse)
 async def get_nisab(db: AsyncSession = Depends(get_db)):
     rate = await CommunityRepository(db).get_latest_nisab()
     if not rate:
@@ -15,7 +18,17 @@ async def get_nisab(db: AsyncSession = Depends(get_db)):
     return rate
 
 @router.put("/nisab", response_model=NisabRateResponse)
+@router.put("/nisab/", response_model=NisabRateResponse)
 @router.post("/nisab", response_model=NisabRateResponse)
+@router.post("/nisab/", response_model=NisabRateResponse)
+@router.patch("/nisab", response_model=NisabRateResponse)
+@router.patch("/nisab/", response_model=NisabRateResponse)
+@router.put("/nisab-rate", response_model=NisabRateResponse)
+@router.put("/nisab-rate/", response_model=NisabRateResponse)
+@router.patch("/nisab-rate", response_model=NisabRateResponse)
+@router.patch("/nisab-rate/", response_model=NisabRateResponse)
+@router.post("/nisab-rate", response_model=NisabRateResponse)
+@router.post("/nisab-rate/", response_model=NisabRateResponse)
 async def update_nisab(data: NisabRateCreate, current_user=Depends(require_permission("zakat.manage")), db: AsyncSession = Depends(get_db)):
     return await CommunityService(db).update_nisab_rates(data.gold_price_per_gram, data.silver_price_per_gram, current_user.id)
 
