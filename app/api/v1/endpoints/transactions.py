@@ -52,16 +52,39 @@ async def initiate_paypal_payment(payload: PayPalInitInput, user=Depends(get_opt
 async def paypal_callback(tx_id: Optional[str] = None, token: Optional[str] = None, cancel: Optional[str] = None, db: AsyncSession = Depends(get_db)):
     return await paypal_payment_service.handle_callback(db, tx_id, token, cancel)
 # ── Standard CRUD & Admin Endpoints ────────────────────────────────────────
+@router.get("/me", response_model=List[TransactionResponse])
+@router.get("/me/", response_model=List[TransactionResponse])
+@router.get("/my-donations", response_model=List[TransactionResponse])
+@router.get("/my-donations/", response_model=List[TransactionResponse])
+async def list_my_transactions(
+    skip: int = Query(0, ge=0), limit: int = Query(50, ge=1, le=100),
+    status: Optional[str] = None, payment_method: Optional[str] = None,
+    user=Depends(get_current_user), db: AsyncSession = Depends(get_db)
+):
+    items, _ = await TransactionRepository(db).search(
+        skip=skip, limit=limit, status=status, payment_method=payment_method,
+        user_id=user.id, phone_number=user.phone_number
+    )
+    return items
+
 @router.get("/", response_model=List[TransactionResponse])
 @router.get("", response_model=List[TransactionResponse], include_in_schema=False)
 async def list_transactions(
     skip: int = Query(0, ge=0), limit: int = Query(50, ge=1, le=100), donation_id: Optional[uuid.UUID] = None,
     status: Optional[str] = None, payment_method: Optional[str] = None, search: Optional[str] = None,
+    mine: Optional[bool] = Query(None),
     user=Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ):
-    uid = None if (user.is_admin or getattr(user, "is_superuser", False)) else user.id
-    phone = None if uid is None else user.phone_number
-    items, _ = await TransactionRepository(db).search(skip=skip, limit=limit, donation_id=donation_id, status=status, payment_method=payment_method, search_query=search, user_id=uid, phone_number=phone)
+    if mine or not (user.is_admin or getattr(user, "is_superuser", False)):
+        uid = user.id
+        phone = user.phone_number
+    else:
+        uid = None
+        phone = None
+    items, _ = await TransactionRepository(db).search(
+        skip=skip, limit=limit, donation_id=donation_id, status=status,
+        payment_method=payment_method, search_query=search, user_id=uid, phone_number=phone
+    )
     return items
 @router.post("/verify-cash/{id}", response_model=TransactionResponse)
 async def verify_cash_transaction(id: uuid.UUID, user=Depends(require_permission("donations.manage")), db: AsyncSession = Depends(get_db)):

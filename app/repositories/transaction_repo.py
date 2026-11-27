@@ -27,8 +27,10 @@ class TransactionRepository(BaseRepository[Transaction]):
         count_stmt = select(func.count(Transaction.id))
         if user_id:
             user_cond = (Transaction.user_id == user_id)
-            if phone_number and len(phone_number) >= 9:
-                user_cond = or_(user_cond, Transaction.account_number.contains(phone_number[-9:]))
+            if phone_number:
+                clean = phone_number.replace("+", "").replace(" ", "").replace("-", "").strip()
+                if len(clean) >= 9:
+                    user_cond = or_(user_cond, Transaction.account_number.contains(clean[-9:]))
             stmt, count_stmt = stmt.where(user_cond), count_stmt.where(user_cond)
         if donation_id:
             stmt, count_stmt = stmt.where(Transaction.donation_id == donation_id), count_stmt.where(Transaction.donation_id == donation_id)
