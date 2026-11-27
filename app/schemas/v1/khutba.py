@@ -48,6 +48,15 @@ class JumaKhutbaResponse(JumaKhutbaBase):
             return None
         return v.isoformat()
 
+    @field_serializer("imam_photo", when_used="json")
+    def serialize_imam_photo(self, v: Optional[str]) -> Optional[str]:
+        if not v:
+            return None
+        if v.startswith("http://") or v.startswith("https://"):
+            return v
+        base = "https://donations-api.jamiamosque.co.ke"
+        return f"{base}{v}" if v.startswith("/") else f"{base}/{v}"
+
 class DeviceTokenCreate(BaseModel):
     fcm_token: str
     platform: Optional[str] = "Android"
