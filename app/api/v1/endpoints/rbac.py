@@ -58,6 +58,7 @@ async def list_permissions(current_user=Depends(require_permission("roles.manage
     return [PermissionResponse(**p) for p in PERMISSIONS]
 
 @router.get("/roles", response_model=List[RoleResponse])
+@router.get("/roles/", response_model=List[RoleResponse])
 async def list_roles(current_user=Depends(require_permission("roles.manage")), db: AsyncSession = Depends(get_db)):
     repo = RBACRepository(db)
     rows = await repo.list_roles_with_counts()

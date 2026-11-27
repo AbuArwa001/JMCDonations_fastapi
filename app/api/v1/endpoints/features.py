@@ -23,6 +23,9 @@ async def create_feature(data: AppFeatureCreate, current_user=Depends(require_pe
     return created
 
 @router.put("/{id}", response_model=AppFeatureResponse)
+@router.put("/{id}/", response_model=AppFeatureResponse)
+@router.patch("/{id}", response_model=AppFeatureResponse)
+@router.patch("/{id}/", response_model=AppFeatureResponse)
 async def update_feature(id: int, data: AppFeatureUpdate, current_user=Depends(require_permission("features.manage")), db: AsyncSession = Depends(get_db)):
     f = await FeatureRepository(db).get_by_id(id)
     if not f:
