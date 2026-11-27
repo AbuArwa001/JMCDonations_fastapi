@@ -51,7 +51,7 @@ async def create_donation(
         try:
             await dispatch_broadcast(
                 db=db, title=f"New Mosque Campaign: {d.title}", body=f"Support our mosque drive: {d.title}. Tap to view.",
-                topics=["campaigns", "all_users"], data={"type": "donation", "donation_id": str(d.id), "title": str(d.title)},
+                topic="campaigns", data={"type": "donation", "donation_id": str(d.id), "title": str(d.title)},
                 image_url=d.image_url if getattr(d, "image_url", None) else None, notification_type="donation",
                 related_id_field="related_donation_id", related_id_val=str(d.id),
             )

@@ -4,13 +4,15 @@ from firebase_admin import messaging
 
 logger = logging.getLogger(__name__)
 
-def _get_android_config():
+def _get_android_config(tag: Optional[str] = None):
     return messaging.AndroidConfig(
         priority="high",
+        collapse_key=tag,
         notification=messaging.AndroidNotification(
             channel_id="high_importance_channel",
             sound="default",
             priority="high",
+            tag=tag,
             click_action="FLUTTER_NOTIFICATION_CLICK",
         ),
     )
@@ -22,12 +24,12 @@ def _get_apns_config():
         )
     )
 
-def send_fcm_notification(title: str, body: str, token: str, data: Optional[Dict] = None, image_url: Optional[str] = None):
+def send_fcm_notification(title: str, body: str, token: str, data: Optional[Dict] = None, image_url: Optional[str] = None, tag: Optional[str] = None):
     try:
         notification = messaging.Notification(title=title, body=body, image=image_url)
         message = messaging.Message(
             notification=notification,
-            android=_get_android_config(),
+            android=_get_android_config(tag),
             apns=_get_apns_config(),
             data={str(k): str(v) for k, v in data.items()} if data else None,
             token=token,
@@ -37,12 +39,12 @@ def send_fcm_notification(title: str, body: str, token: str, data: Optional[Dict
         logger.error(f"Failed to send direct FCM notification: {e}")
         return None
 
-def send_fcm_topic_notification(topic: str, title: str, body: str, data: Optional[Dict] = None, image_url: Optional[str] = None):
+def send_fcm_topic_notification(topic: str, title: str, body: str, data: Optional[Dict] = None, image_url: Optional[str] = None, tag: Optional[str] = None):
     try:
         notification = messaging.Notification(title=title, body=body, image=image_url)
         message = messaging.Message(
             notification=notification,
-            android=_get_android_config(),
+            android=_get_android_config(tag),
             apns=_get_apns_config(),
             data={str(k): str(v) for k, v in data.items()} if data else None,
             topic=topic,
@@ -54,7 +56,7 @@ def send_fcm_topic_notification(topic: str, title: str, body: str, data: Optiona
         logger.error(f"Failed to send FCM topic notification to '{topic}': {e}")
         return None
 
-def send_fcm_multicast(tokens: List[str], title: str, body: str, data: Optional[Dict] = None, image_url: Optional[str] = None) -> int:
+def send_fcm_multicast(tokens: List[str], title: str, body: str, data: Optional[Dict] = None, image_url: Optional[str] = None, tag: Optional[str] = None) -> int:
     if not tokens:
         return 0
     clean_tokens = list({t for t in tokens if t})
@@ -67,7 +69,7 @@ def send_fcm_multicast(tokens: List[str], title: str, body: str, data: Optional[
             mm = messaging.MulticastMessage(
                 tokens=chunk,
                 notification=messaging.Notification(title=title, body=body, image=image_url),
-                android=_get_android_config(),
+                android=_get_android_config(tag),
                 apns=_get_apns_config(),
                 data={str(k): str(v) for k, v in data.items()} if data else None,
             )

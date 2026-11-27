@@ -14,7 +14,7 @@ async def auto_notify_khutba(db: AsyncSession, k: JumaKhutba):
         image_full_url = make_full_image_url(k.imam_photo)
         payload = {"type": "khutba", "khutba_id": str(k.id), "title": str(k.title)}
         await dispatch_broadcast(
-            db=db, title=title, body=body, topics=["all_users", "general", "khutba"],
+            db=db, title=title, body=body, topic="all_users",
             data=payload, image_url=image_full_url, notification_type="khutba",
             related_id_field="related_khutba_id", related_id_val=k.id,
         )
@@ -46,7 +46,7 @@ async def notify_khutba(
         db=db,
         title=title,
         body=body,
-        topics=["all_users", "general", "khutba"],
+        topic="all_users",
         data=payload_data,
         image_url=image_full_url,
         notification_type="khutba",

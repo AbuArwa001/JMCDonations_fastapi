@@ -62,13 +62,13 @@ class FirebaseService:
         await db.refresh(user)
         return user
 
-    def send_notification(self, title: str, body: str, token: str, data: dict = None, image_url: str = None):
-        return send_fcm_notification(title, body, token, data, image_url)
+    def send_notification(self, title: str, body: str, token: str, data: dict = None, image_url: str = None, tag: str = None):
+        return send_fcm_notification(title, body, token, data, image_url, tag)
 
-    def send_topic_notification(self, topic: str, title: str, body: str, data: dict = None, image_url: str = None):
-        return send_fcm_topic_notification(topic, title, body, data, image_url)
+    def send_topic_notification(self, topic: str, title: str, body: str, data: dict = None, image_url: str = None, tag: str = None):
+        return send_fcm_topic_notification(topic, title, body, data, image_url, tag)
 
-    def send_multicast(self, tokens: list, title: str, body: str, data: dict = None, image_url: str = None) -> int:
-        return send_fcm_multicast(tokens, title, body, data, image_url)
+    def send_multicast(self, tokens: list, title: str, body: str, data: dict = None, image_url: str = None, tag: str = None) -> int:
+        return send_fcm_multicast(tokens, title, body, data, image_url, tag)
 
 firebase_service = FirebaseService()
