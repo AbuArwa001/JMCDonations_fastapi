@@ -13,6 +13,7 @@ from app.services.firebase import firebase_service
 router = APIRouter()
 
 @router.get("/logs", response_model=List[NotificationLogResponse])
+@router.get("/logs/", response_model=List[NotificationLogResponse])
 async def list_notification_logs(limit: int = 50, db: AsyncSession = Depends(get_db)):
     stmt = select(NotificationLog).order_by(NotificationLog.sent_at.desc()).limit(limit)
     return list((await db.execute(stmt)).scalars().all())
