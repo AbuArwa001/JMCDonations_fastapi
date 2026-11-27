@@ -11,13 +11,19 @@ class AnalyticsRepository:
         self.db = db
 
     async def get_overview_totals(self) -> Dict[str, float]:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
         week_ago = now - timedelta(days=7)
         month_ago = now - timedelta(days=30)
 
         total_stmt = select(func.coalesce(func.sum(Transaction.amount), 0.0)).where(Transaction.payment_status == "Completed")
-        week_stmt = total_stmt.where(Transaction.donated_at >= week_ago)
-        month_stmt = total_stmt.where(Transaction.donated_at >= month_ago)
+        week_stmt = select(func.coalesce(func.sum(Transaction.amount), 0.0)).where(
+            Transaction.payment_status == "Completed",
+            Transaction.donated_at >= week_ago
+        )
+        month_stmt = select(func.coalesce(func.sum(Transaction.amount), 0.0)).where(
+            Transaction.payment_status == "Completed",
+            Transaction.donated_at >= month_ago
+        )
 
         total = (await self.db.execute(total_stmt)).scalar_one()
         week = (await self.db.execute(week_stmt)).scalar_one()
@@ -30,7 +36,7 @@ class AnalyticsRepository:
         }
 
     async def get_donation_trends(self, period: str = "week") -> List[Dict[str, Any]]:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
         days = 7 if period == "week" else (30 if period == "month" else 365)
         start_date = now - timedelta(days=days)
 
