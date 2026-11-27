@@ -4,8 +4,35 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import HTTPException, status
 from app.repositories.rbac_repo import RBACRepository
 from app.repositories.user_repo import UserRepository
-from app.core.permissions import DEFAULT_ROLES, sanitize_permissions
-from app.models.users import Role
+from app.core.permissions import DEFAULT_ROLES
+from app.models.users import Role, User
+from app.schemas.v1.rbac import StaffUser, RoleSummary
+
+def user_to_staff_user(user: User) -> StaffUser:
+    is_super = bool(user.is_admin and (not user.role_id or (user.role and "*" in (user.role.permissions or []))))
+    role_summary = None
+    if user.role:
+        role_summary = RoleSummary(
+            id=user.role.id,
+            role_name=user.role.role_name,
+            description=user.role.description,
+            color=user.role.color or "#10b981",
+            is_system=bool(user.role.is_system),
+        )
+    return StaffUser(
+        id=user.id,
+        email=user.email,
+        username=user.username,
+        full_name=user.full_name or user.username,
+        phone_number=user.phone_number,
+        profile_image_url=user.profile_image_url,
+        is_active=user.is_active,
+        is_admin=user.is_admin,
+        is_super_admin=is_super,
+        role=role_summary,
+        ss_login=user.ss_login,
+        firebase_uid=user.firebase_uid,
+    )
 
 class RBACService:
     def __init__(self, db: AsyncSession):
@@ -52,4 +79,3 @@ class RBACService:
 async def ensure_default_roles(db: AsyncSession) -> None:
     service = RBACService(db)
     await service.ensure_default_roles()
-
