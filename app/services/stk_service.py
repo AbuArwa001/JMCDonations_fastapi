@@ -1,4 +1,4 @@
-import uuid, logging
+import uuid, logging, time
 from typing import Dict, Any, Optional
 from datetime import datetime, timezone
 from sqlalchemy import select, or_
@@ -12,9 +12,12 @@ from app.schemas.v1.transactions import STKPushInput
 from app.services.mpesa import mpesa_service
 from app.services.donation_resolver import resolve_donation, notify_admin_donation_completed, MIN_ADMIN_NOTIFICATION_AMOUNT
 logger = logging.getLogger(__name__)
+
 class STKService:
     def __init__(self):
         self.stk_results: Dict[str, Dict[str, Any]] = {}
+        self.last_query_time: Dict[str, float] = {}
+
     async def initiate_stk_push(self, db: AsyncSession, payload: STKPushInput, user: Optional[User]) -> Dict[str, Any]:
         donation = await resolve_donation(db, payload.donation or payload.donation_id)
         now = datetime.now(timezone.utc).replace(tzinfo=None)
@@ -54,6 +57,7 @@ class STKService:
             raise HTTPException(status_code=400, detail=res.get("errorMessage", "STK push initiation failed"))
         tx.transaction_reference = cid; await db.commit(); await db.refresh(tx)
         return {"transaction_id": str(tx.id), "MerchantRequestID": res.get("MerchantRequestID", ""), "CheckoutRequestID": cid, "ResponseCode": str(res.get("ResponseCode", "0")), "ResponseDescription": res.get("ResponseDescription", ""), "CustomerMessage": res.get("CustomerMessage", "")}
+
     async def check_status(self, db: AsyncSession, reference: str) -> Dict[str, Any]:
         if not reference: raise HTTPException(status_code=400, detail="Reference is required")
         tx = (await db.execute(select(Transaction).filter(or_(Transaction.transaction_reference == reference, Transaction.mpesa_receipt == reference)))).scalars().first()
@@ -61,23 +65,31 @@ class STKService:
             try: tx = (await db.execute(select(Transaction).filter(Transaction.id == uuid.UUID(reference)))).scalars().first()
             except ValueError: pass
         if not tx: raise HTTPException(status_code=404, detail="Transaction not found")
-        if tx.payment_status == "Pending" and tx.transaction_reference and tx.transaction_reference.startswith("ws_CO_"):
+        cid, now_ts = tx.transaction_reference or "", time.time()
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        age = (now - tx.donated_at).total_seconds() if tx.donated_at else 99
+        last_q = self.last_query_time.get(cid, 0)
+        if tx.payment_status == "Pending" and cid.startswith("ws_CO_") and age >= 10 and (now_ts - last_q >= 10):
+            self.last_query_time[cid] = now_ts
             try:
-                stk = await mpesa_service.query_stk_status(checkout_request_id=tx.transaction_reference, shortcode=settings.MPESA_SHORTCODE)
+                stk = await mpesa_service.query_stk_status(checkout_request_id=cid, shortcode=settings.MPESA_SHORTCODE)
                 code, desc = str(stk.get("ResultCode", "")), str(stk.get("ResultDesc", ""))
                 if code == "0":
-                    tx.payment_status = "Completed"; tx.completed_at = datetime.now(timezone.utc).replace(tzinfo=None)
+                    tx.payment_status = "Completed"; tx.completed_at = now
                     await db.commit(); await db.refresh(tx)
                     if (tx.amount or 0) >= MIN_ADMIN_NOTIFICATION_AMOUNT:
                         d = (await db.execute(select(Donation).filter(Donation.id == tx.donation_id))).scalars().first()
                         notify_admin_donation_completed(tx, d)
                 elif code == "1032":
-                    tx.payment_status = "Cancelled"; self.stk_results[tx.transaction_reference] = {"result_code": code, "result_desc": desc}
+                    tx.payment_status = "Cancelled"; self.stk_results[cid] = {"result_code": code, "result_desc": desc}
                     await db.commit(); await db.refresh(tx)
                 elif code in ("1037", "2001", "1"):
-                    tx.payment_status = "Failed"; self.stk_results[tx.transaction_reference] = {"result_code": code, "result_desc": desc}
+                    tx.payment_status = "Failed"; self.stk_results[cid] = {"result_code": code, "result_desc": desc}
                     await db.commit(); await db.refresh(tx)
-            except Exception as e: logger.warning(f"Error querying Daraja STK: {e}")
-        stk_info = self.stk_results.get(tx.transaction_reference or "") or self.stk_results.get(str(tx.id)) or {}
+            except Exception as e:
+                if "429" in str(e): logger.debug(f"Daraja query rate-limited for {cid}; awaiting callback.")
+                else: logger.warning(f"Error querying Daraja STK: {e}")
+        stk_info = self.stk_results.get(cid) or self.stk_results.get(str(tx.id)) or {}
         return {"payment_status": tx.payment_status, "mpesa_receipt": tx.mpesa_receipt or "", "transaction_id": str(tx.id), "amount": float(tx.amount), "result_code": stk_info.get("result_code"), "result_desc": stk_info.get("result_desc")}
+
 stk_service = STKService()
